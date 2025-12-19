@@ -1,0 +1,27 @@
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: bhp
+      POSTGRES_USER: bhp
+      POSTGRES_PASSWORD: bhp
+    ports:
+      - "5432:5432"
+    volumes:
+      - bhp_pgdata:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7
+    ports:
+      - "6379:6379"
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    ports:
+      - "6333:6333"
+    volumes:
+      - bhp_qdrant:/qdrant/storage
+
+volumes:
+  bhp_pgdata:
+  bhp_qdrant:
