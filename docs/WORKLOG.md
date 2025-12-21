@@ -22,13 +22,20 @@
 
 ## 2025-12-20
 - What I worked on:
-  - [add summary]
+  - Pushed repo to GitHub and set the default branch to `main`.
+  - Deployed UI to Vercel with root directory `apps/ui` and Next.js preset.
+  - Added `staging.brianhopkinsphoto.com` and configured GoDaddy CNAME to Vercel.
+  - Deployed API to Render with root directory `apps/api`.
+  - Set `BHP_CORS_ORIGINS` on Render and `NEXT_PUBLIC_API_BASE_URL` on Vercel.
+  - Verified API health and staging UI wiring.
 - Current status:
-  - [update status]
+  - Staging UI is live at `https://staging.brianhopkinsphoto.com`.
+  - API is live at `https://bhp-console.onrender.com` and responds on `/api/v1/health`.
 - Next step:
-  - [add next step]
+  - Start website design and the photo ingest/tagging pipeline.
 - Notes/decisions:
-  - [add notes]
+  - Hosting: Vercel for UI, Render for API; keep production domain on GoDaddy for now.
+  - Struggles: branch mismatch (`master` vs `main`), Vercel root directory/framework preset, Render root directory, CORS env parsing, intermittent Render logs.
 
 ## 2025-12-20
 - What I worked on:

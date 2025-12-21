@@ -423,7 +423,47 @@ Isolation:
 
 ## 8. Deployment model (local-first)
 
-### Docker Compose (recommended)
+### 8.1 Local development (current)
+
+- Primary workflow runs on a laptop.
+- UI and API run in separate terminals (`make ui`, `make api`).
+- Supporting services (Postgres, Redis, Qdrant) run via Docker Compose (`make infra-up`).
+- Photo storage lives in `storage/` by default.
+
+### 8.2 Current hosted wiring (staging)
+
+The current hosted setup is a staging deployment used to validate the wiring between UI, API, and DNS.
+
+```mermaid
+flowchart LR
+  Browser["Browser"] --> DNS["GoDaddy DNS: staging.brianhopkinsphoto.com"]
+  DNS --> Vercel["Vercel: Next.js UI (apps/ui)"]
+  Vercel --> Render["Render: FastAPI API (apps/api)"]
+
+  GitHub["GitHub: brianhopkins88/bhp-console"] --> Vercel
+  GitHub --> Render
+```
+
+### 8.3 Hosted configuration details (current)
+
+- Git hosting: GitHub repo `brianhopkins88/bhp-console` with default branch `main`.
+- UI hosting: Vercel
+  - Root directory: `apps/ui`
+  - Framework preset: Next.js
+  - Environment variables:
+    - `NEXT_PUBLIC_API_BASE_URL=https://bhp-console.onrender.com`
+  - Domain: `staging.brianhopkinsphoto.com` (CNAME configured in GoDaddy)
+- API hosting: Render (Web Service)
+  - Root directory: `apps/api`
+  - Build command: `pip install -r requirements.txt`
+  - Start command: `uvicorn app.main:app --host 0.0.0.0 --port $PORT`
+  - Environment variables:
+    - `BHP_CORS_ORIGINS=["https://staging.brianhopkinsphoto.com"]`
+  - Health check: `https://bhp-console.onrender.com/api/v1/health`
+  - Free tier note: instances can spin down and cold start on first request
+- DNS: GoDaddy manages the root domain; staging uses a CNAME to Vercel.
+
+### 8.4 Docker Compose (recommended)
 
 Containers:
 
