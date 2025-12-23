@@ -6,6 +6,20 @@
 - Next step:
 - Notes/decisions:
 
+## 2025-12-21
+- What I worked on:
+  - Scaffolded public site routes and admin console routes in Next.js.
+  - Added basic auth middleware for `/admin` and documented env vars.
+  - Updated docs with hosted wiring and troubleshooting notes.
+  - Pushed changes to GitHub and verified staging `/admin` auth.
+- Current status:
+  - Staging site updated; `/admin` is protected by basic auth.
+  - API health checks working from the admin dashboard.
+- Next step:
+  - Confirm site design direction and image storage path; start OpenAI tagging pipeline (API + DB).
+- Notes/decisions:
+  - Middleware must live at `apps/ui/src/middleware.ts` for Next.js.
+
 ## 2025-12-18
 - What I worked on:
   - Added env configuration for UI/API and wired UI to use `NEXT_PUBLIC_API_BASE_URL`.
