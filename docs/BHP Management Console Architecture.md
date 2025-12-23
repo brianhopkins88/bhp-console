@@ -2,9 +2,9 @@
 ## Architecture Document (Agentic AI Edition)
 
 ### Document status
-- Version: v0.2
+- Version: v0.4
 - Scope: Local-first web application running on a laptop initially, designed to evolve to cloud-hosted components later.
-- Key change from v0.1: “Agentified” automation using OpenAI-first agentic patterns, with strong guardrails and approvals.
+- Key change from v0.3: added conversational site builder and agentic execution/testing for site updates.
 
 ---
 
@@ -38,9 +38,10 @@ A web application that helps automate and manage the core functions of a small p
 ## 2. Requirements drivers
 
 ### 2.1 Key functional drivers (from story map)
-- MVP: publish website, manage photo library, draft/schedule posts, capture leads, draft responses, track shoots and expenses.
+- MVP: AI image classification pipeline, photo library workflow (upload -> tag -> roles), AI website generation with iterative feedback, staging deploy and publish governance.
 - V1: journal-driven recommendations, SEO helpers, client intake forms, improved reporting.
-- V2+: paid ads automation and “free ads” group posting with rules awareness.
+- V2+: paid ads automation and "free ads" group posting with rules awareness.
+- Primary complexity: agentic website updates from natural language must map to templates, apply safe changes, and run automated checks.
 
 ### 2.2 Quality attributes
 - Reliability: scheduled tasks should run predictably with retries.
@@ -56,6 +57,7 @@ A web application that helps automate and manage the core functions of a small p
 - Modular monolith (initial) with a dedicated Agent Runtime and Tool Gateway.
 - Background job system for scheduled and long-running agent sessions.
 - Database + photo storage + optional vector store for semantic retrieval.
+- AI pipelines for image tagging and site generation with versioned outputs.
 
 ### 3.2 System context
 - External systems:
@@ -105,7 +107,25 @@ flowchart LR
   - view agent plans before execution
   - approve or reject high-impact actions
   - see run logs and outcomes
-- Media browser: tag/search/filter photo library.
+- Photo library workflow:
+  - upload and preview assets
+  - review AI tags and manual tags
+  - assign roles (hero_main, logo, showcase, gallery, social)
+  - manage publish status for roles
+- Website generation workflow:
+  - select templates
+  - generate site drafts
+  - provide iterative feedback via conversation
+  - view agent run status and test results
+  - deploy to staging and review
+
+### Suggested admin routes (scaffolding)
+
+- `/admin/photos` -> upload, tag review, roles, publish state
+- `/admin/site-builder` -> conversational UI + change requests
+- `/admin/site-builder/versions` -> site version history and diffs
+- `/admin/site-builder/runs` -> agent runs, logs, and outputs
+- `/admin/site-builder/tests` -> automated test results and staging status
 
 ### Recommended stack
 
@@ -119,8 +139,10 @@ flowchart LR
 ### Responsibilities
 
 - Domain logic:
-  - Website pages, templates, publish pipeline
-  - Photo metadata tagging and usage tracking
+  - Website pages, templates, site versioning, and publish pipeline
+  - Conversational change requests and AI-driven site updates
+  - Agent run execution, logs, and automated test results
+  - Photo ingestion, tagging, role management, publish constraints
   - CRM and inquiry lifecycle
   - Finance registry (shoots + expenses)
   - Journal entries and recommendation surfaces
@@ -137,13 +159,25 @@ flowchart LR
 - Pydantic models for schema validation
 - SQLAlchemy (or SQLModel) for persistence
 
+### Suggested API surface (scaffolding)
+
+- `GET /api/v1/site/templates` -> list available templates
+- `POST /api/v1/site/generate` -> generate a site draft from template + tags
+- `POST /api/v1/site/feedback` -> submit conversational instructions
+- `GET /api/v1/site/versions` -> list site versions and status
+- `POST /api/v1/site/deploy/staging` -> deploy a version to staging
+- `POST /api/v1/site/tests` -> run automated checks on a version
+- `GET /api/v1/conversations` -> list builder conversations
+- `POST /api/v1/conversations/{id}/messages` -> add user instruction + agent reply
+- `GET /api/v1/agent-runs` -> list agent runs and outputs
+
 ------
 
 ## 4.3 Agent Runtime (Orchestrator)
 
 ### Purpose
 
-Enable “agentified” automations that can plan and execute multi-step tasks using tools, while remaining safe and auditable.
+Enable "agentified" automations that can plan and execute multi-step tasks using tools, while remaining safe and auditable.
 
 ### Responsibilities
 
@@ -154,18 +188,22 @@ Enable “agentified” automations that can plan and execute multi-step tasks u
   - Run multi-step sessions with retries and fallbacks
   - Pause for approvals before high-impact actions
   - Record step-by-step outcomes
+  - Execute site change requests and generate updated site versions
+  - Run automated checks/tests and report results
 - Memory:
   - Retrieve relevant context (brand voice, past posts, journal notes, templates)
-  - Store “what happened” outcomes for later use
+  - Store outcomes for later use
 - Safety:
   - Never directly access external systems
   - Must call tools via the Tool Gateway
   - Must comply with Policy and Guardrails decisions
+  - Ask clarifying questions when user instructions do not fit a template safely
 
 ### Suggested agent roles (can start as one, split later)
 
+- ImageClassifierAgent
+- WebsiteAgent (generation and iteration)
 - MarketingAgent
-- WebsiteAgent
 - CRMConciergeAgent
 - FinanceClerkAgent
 - BrandGuardianAgent
@@ -175,6 +213,7 @@ Enable “agentified” automations that can plan and execute multi-step tasks u
 - Planner model: strong reasoning for planning and tool selection
 - Writer model: efficient content drafting (captions, emails, blog drafts)
 - Vision model: image tagging and selection guidance
+- OpenAI APIs power vision tagging, planning, and site-generation instructions
 
 ------
 
@@ -194,12 +233,23 @@ Provide a single controlled interface between agents and the rest of the system.
 ### Example tool set
 
 - Website
+  - `website.generate_from_template(template_id, constraints)`
+  - `website.apply_feedback(site_version_id, instructions)`
+  - `website.run_checks(site_version_id)`
+  - `website.diff_versions(source_version_id, target_version_id)`
   - `website.preview_patch(page_id, patch)`
+  - `website.deploy_to_staging(site_version_id)` (approval gated)
   - `website.publish(site_version_id)` (approval gated)
 - Photos
   - `photos.import(paths)`
-  - `photos.search(tags, rating_min, location, season)`
-  - `photos.generate_derivatives(asset_ids)`
+  - `photos.tag_auto(asset_ids)`
+  - `photos.tag_manual(asset_id, tags)`
+  - `photos.set_roles(asset_id, roles)`
+  - `photos.set_role_published(asset_id, role, is_published)`
+  - `photos.set_focal_point(asset_id, x, y)`
+  - `photos.rate(asset_id, rating)`
+  - `photos.search(tags, rating_min, roles, location, season)`
+  - `photos.generate_derivatives(asset_ids, ratios)`
 - Social
   - `social.create_draft(channel, caption, asset_ids)`
   - `social.schedule(draft_id, schedule_time)`
@@ -230,9 +280,14 @@ Enforce rules outside the model so the system remains safe, predictable, and com
   - monthly cap
   - per-campaign cap
   - hard blocks when limits exceeded
+- Asset governance:
+  - enforce exactly one published hero_main
+  - prevent deletion of published logo/showcase assets; require replacement
+- Site governance:
+  - require automated checks to pass before staging promotion
 - Compliance constraints:
   - disallow actions likely to violate platform terms
-  - restrict automation to “assistive” mode where necessary
+  - restrict automation to assistive mode where necessary
 - Content constraints:
   - avoid repetitive spammy phrasing
   - require inclusion of key disclaimers or booking details (optional templates)
@@ -249,7 +304,7 @@ Enforce rules outside the model so the system remains safe, predictable, and com
 ### Responsibilities
 
 - Run scheduled agent jobs (weekly recommendations, seasonal campaign planning)
-- Execute long-running pipelines (image optimization, batch tagging, report generation)
+- Execute long-running pipelines (image tagging, derivative generation, site generation, automated checks, report generation)
 - Retry transient failures and record final outcomes
 
 ### Recommended stack
@@ -270,7 +325,8 @@ Stores:
 
 - Contacts, inquiries, message threads
 - Shoots, expenses, categories
-- Website pages, templates, publish versions
+- Website pages, templates, site versions, deployments
+- Conversational instructions, agent runs, and test results
 - Social drafts, schedules, results snapshots
 - Ads proposals, campaigns, spend snapshots
 - Approvals and audit events
@@ -283,8 +339,11 @@ Stores:
 
 Strategy:
 
-- Photos stored by year and shoot
-- DB stores tags, ratings, usage history, and derived assets
+- Originals stored in a local library (e.g., `storage/library/originals/`) with stable asset IDs
+- Derived variants stored separately (e.g., `storage/library/derived/`) by ratio, size, and format
+- Common ratios for site assets: 3:2 (4x6), 5:7, 1:1, with focal points used for smart crops
+- DB stores tags (AI + manual), roles (hero_main, logo, showcase, gallery, social) with published flags, ratings, focal points, usage history, and derived variants
+- DB stores site placements and slot assignments for hero, logo, gallery, and showcase sections
 
 ### 4.7.3 Vector store (optional but recommended)
 
@@ -297,7 +356,7 @@ Purpose:
 
 ------
 
-## 4.8 Integrations (“Connectors”)
+## 4.8 Integrations ("Connectors")
 
 ### Connector approach
 
@@ -328,7 +387,7 @@ Rules:
 
 - Must be human-in-the-loop by default
 - Must capture screenshots and logs for debugging
-- Prefer “open and prefill” rather than “fully click Post” automation
+- Prefer open and prefill rather than fully click Post automation
 
 Isolation:
 
@@ -344,6 +403,18 @@ Isolation:
 - Inquiry
 - Shoot
 - Asset (Photo)
+- AssetTag
+- AssetRole (with published state)
+- AssetVariant
+- SiteTemplate
+- SiteVersion
+- SiteDeployment
+- SitePlacement
+- SiteChangeRequest
+- SiteTestRun
+- Conversation
+- ConversationMessage
+- AgentRun
 - WebsitePage
 - BlogPost
 - SocialPost
@@ -390,6 +461,17 @@ Isolation:
    - blog topic candidates
 4. Brian approves and agent executes
 
+### 6.4 Image upload to site generation
+
+1. Brian uploads images to the library
+2. AI tagging pipeline generates tags + confidence scores
+3. Brian reviews, edits tags, assigns roles (hero_main, logo, showcase, gallery)
+4. System generates a site draft from a selected template
+5. Brian provides feedback via conversation; AI may ask clarifying questions
+6. Agent executes changes, runs automated checks, and records results
+7. Brian deploys to staging and reviews
+8. Brian promotes to business domain when ready
+
 ------
 
 ## 7. Security and reliability
@@ -417,7 +499,7 @@ Isolation:
 
 - Idempotent jobs
 - Retries for transient connector failures
-- “Catch-up” for scheduled tasks after laptop sleep
+- Catch-up for scheduled tasks after laptop sleep
 
 ------
 
@@ -496,12 +578,14 @@ Containers:
 
 ### MVP
 
-- Website generator, preview, deploy
-- Photo import and tagging, featured sets
-- Social drafts and scheduling queue
+- AI image classification pipeline
+- Photo import, tagging, role management, derivative generation
+- Role-driven website generation and iterative AI feedback
+- Staging deploy and preview workflow
+- Website generator, preview, deploy (baseline)
+- Social drafts and scheduling queue (manual publish first)
 - Contact form intake, inquiry list, alerts, draft replies
 - Shoots and expenses registry, annual export
-- Agent “copilot mode” for plan and draft generation (manual execution)
 
 ### V1
 
@@ -534,8 +618,9 @@ bhp-console/
     docker-compose.yml
     migrations/
   storage/
-    library/              # local photos (configurable)
-    derived/              # thumbnails and web sizes
+    library/
+      originals/          # source files (not in git)
+      derived/            # optimized variants (ratios, sizes, formats)
   docs/
     architecture.md
 ```

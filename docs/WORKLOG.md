@@ -6,6 +6,20 @@
 - Next step:
 - Notes/decisions:
 
+## 2025-12-22
+- What I worked on:
+  - Implemented asset storage + API endpoints for uploads, tagging, roles, ratings, focal points, thumbnails, previews, and deletes.
+  - Added derivative generation and batch CLI, plus storage config and migrations.
+  - Built a scalable admin photo library UI with workflow lanes, filters, bulk actions, previews, and multi-file upload.
+  - Enforced hero main uniqueness, published role rules, and UI role toggles with publish state.
+- Current status:
+  - Admin photo library supports uploads, tagging, role management, previews, and publish/delete constraints.
+  - Migrations include published role flag and asset tables.
+- Next step:
+  - Add AI auto-tagging pipeline and placement logic for hero/gallery/showcase selection.
+- Notes/decisions:
+  - Hero main is required and unique; published logo/showcase assets cannot be deleted.
+
 ## 2025-12-21
 - What I worked on:
   - Scaffolded public site routes and admin console routes in Next.js.

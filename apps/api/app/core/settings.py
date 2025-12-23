@@ -1,5 +1,10 @@
+from pathlib import Path
+
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[4]
 
 
 class Settings(BaseSettings):
@@ -7,6 +12,12 @@ class Settings(BaseSettings):
     api_v1_prefix: str = "/api/v1"
     cors_origins: list[str] = ["http://localhost:3000"]
     database_url: str = "postgresql+psycopg://bhp:bhp@localhost:5432/bhp"
+    assets_storage_root: str = str(PROJECT_ROOT / "storage")
+    assets_originals_dir: str = str(PROJECT_ROOT / "storage" / "library" / "originals")
+    assets_derived_dir: str = str(PROJECT_ROOT / "storage" / "library" / "derived")
+    assets_derivatives_version: int = 1
+    assets_derivative_ratios: list[str] = ["3:2", "5:7", "1:1"]
+    assets_derivative_widths: list[int] = [800, 1200, 2000]
 
     model_config = SettingsConfigDict(
         env_prefix="BHP_",
@@ -19,6 +30,20 @@ class Settings(BaseSettings):
     def split_cors_origins(cls, value: str | list[str]) -> list[str]:
         if isinstance(value, str):
             return [origin.strip() for origin in value.split(",") if origin.strip()]
+        return value
+
+    @field_validator("assets_derivative_ratios", mode="before")
+    @classmethod
+    def split_derivative_ratios(cls, value: str | list[str]) -> list[str]:
+        if isinstance(value, str):
+            return [ratio.strip() for ratio in value.split(",") if ratio.strip()]
+        return value
+
+    @field_validator("assets_derivative_widths", mode="before")
+    @classmethod
+    def split_derivative_widths(cls, value: str | list[int]) -> list[int]:
+        if isinstance(value, str):
+            return [int(width.strip()) for width in value.split(",") if width.strip()]
         return value
 
 

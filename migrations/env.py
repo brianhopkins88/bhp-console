@@ -12,6 +12,7 @@ api_root = os.path.join(project_root, "apps", "api")
 sys.path.extend([project_root, api_root])
 
 from app.db.base import Base  # noqa: E402
+from app.models import assets  # noqa: F401,E402
 
 config = context.config
 

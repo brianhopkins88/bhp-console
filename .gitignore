@@ -23,3 +23,6 @@ yarn-error.log*
 # Env
 .env
 .env.*
+
+# Local assets
+storage/
