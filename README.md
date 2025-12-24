@@ -44,6 +44,7 @@ Remember:
 - Redeploy Vercel/Render after changing environment variables.
 - Render free tier can cold start; first request may be slow.
 - Vercel/Render stay up without any local session scripts.
+- Render start command: `./scripts/render_start.sh` (runs Alembic migrations before boot).
 
 ## Public site pages (planned)
 - Home (`/`)
@@ -66,6 +67,7 @@ Admin auth:
 Environment variables:
 - Vercel: `NEXT_PUBLIC_API_BASE_URL=https://bhp-console.onrender.com`
 - Render: `BHP_CORS_ORIGINS=["https://staging.brianhopkinsphoto.com"]`
+- Render DB: set `BHP_DATABASE_URL` or `DATABASE_URL` (the start script maps it).
 
 ## Tests
 - API: `cd apps/api && pytest`
