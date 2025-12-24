@@ -88,6 +88,12 @@ def main() -> int:
 
     args = parser.parse_args()
     api_base_url = args.api_base_url or os.getenv("BHP_SEED_API_BASE_URL")
+    ca_bundle = (
+        os.getenv("BHP_CA_BUNDLE")
+        or os.getenv("SSL_CERT_FILE")
+        or os.getenv("REQUESTS_CA_BUNDLE")
+    )
+    verify: bool | str = ca_bundle if ca_bundle else True
 
     if not api_base_url:
         print("Missing --api-base-url. Example: https://bhp-console.onrender.com")
@@ -112,7 +118,7 @@ def main() -> int:
         return 0
 
     failures = 0
-    with httpx.Client(timeout=60) as client:
+    with httpx.Client(timeout=60, verify=verify) as client:
         for file_path in files:
             ok = upload_file(
                 client,
