@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ "${BHP_SEED_ON_PUSH:-1}" != "1" ]]; then
+  exit 0
+fi
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+cd "$REPO_ROOT"
+
+if [[ -z "${BHP_SEED_UPLOAD_DIR:-}" ]]; then
+  echo "BHP_SEED_UPLOAD_DIR not set; skipping staging seed."
+  exit 0
+fi
+
+API_BASE_URL="${BHP_SEED_API_BASE_URL:-https://bhp-console.onrender.com}"
+PYTHON_BIN="${BHP_SEED_PYTHON_BIN:-python}"
+
+ARGS=(--api-base-url "$API_BASE_URL" --dir "$BHP_SEED_UPLOAD_DIR")
+if [[ -n "${BHP_SEED_TAGS:-}" ]]; then
+  ARGS+=(--tags "$BHP_SEED_TAGS")
+fi
+if [[ -n "${BHP_SEED_LIMIT:-}" ]]; then
+  ARGS+=(--limit "$BHP_SEED_LIMIT")
+fi
+if [[ "${BHP_SEED_NO_DERIVATIVES:-0}" == "1" ]]; then
+  ARGS+=(--no-derivatives)
+fi
+
+"$PYTHON_BIN" apps/api/scripts/seed_staging_uploads.py "${ARGS[@]}"

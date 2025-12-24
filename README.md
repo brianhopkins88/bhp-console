@@ -47,6 +47,16 @@ Remember:
 - Render start command: `./scripts/render_start.sh` (runs Alembic migrations before boot).
 - Optional staging seed: `python apps/api/scripts/seed_staging_uploads.py --api-base-url https://bhp-console.onrender.com --dir /path/to/images`
 
+Dev-only auto-seed on git push (optional):
+- Install the hook: `cp scripts/hooks/post-push .git/hooks/post-push && chmod +x .git/hooks/post-push`
+- Set env vars:
+  - `BHP_SEED_UPLOAD_DIR=/path/to/images`
+  - `BHP_SEED_API_BASE_URL=https://bhp-console.onrender.com` (optional)
+  - `BHP_SEED_TAGS="family,portrait"` (optional)
+  - `BHP_SEED_LIMIT=20` (optional)
+  - `BHP_SEED_NO_DERIVATIVES=1` (optional)
+  - `BHP_SEED_ON_PUSH=0` to disable when you want to be careful.
+
 ## Public site pages (planned)
 - Home (`/`)
 - Services (`/services`)
