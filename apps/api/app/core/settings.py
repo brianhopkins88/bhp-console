@@ -18,10 +18,17 @@ class Settings(BaseSettings):
     assets_derivatives_version: int = 1
     assets_derivative_ratios: list[str] = ["3:2", "5:7", "1:1"]
     assets_derivative_widths: list[int] = [800, 1200, 2000]
+    openai_api_key: str | None = None
+    openai_tagging_model: str = "gpt-5-mini"
+    openai_tagging_prompt_version: str = "2025-02-05"
+    openai_tagging_schema_version: str = "v1"
+    openai_tagging_image_max_width: int = 512
+    openai_ca_bundle: str | None = None
+    openai_token_budget: int = 1_000_000
 
     model_config = SettingsConfigDict(
         env_prefix="BHP_",
-        env_file=".env",
+        env_file=str(PROJECT_ROOT / ".env"),
         case_sensitive=False,
     )
 

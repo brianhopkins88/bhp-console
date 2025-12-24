@@ -52,6 +52,39 @@ class AssetTag(Base):
     asset: Mapped["Asset"] = relationship(back_populates="tags")
 
 
+class AssetAutoTagJob(Base):
+    __tablename__ = "asset_auto_tag_jobs"
+    __table_args__ = (UniqueConstraint("asset_id", name="uix_asset_autotag_asset"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    asset_id: Mapped[str] = mapped_column(ForeignKey("assets.id", ondelete="CASCADE"), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="queued")
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    asset: Mapped["Asset"] = relationship()
+
+
+class TagTaxonomy(Base):
+    __tablename__ = "tag_taxonomy"
+    __table_args__ = (UniqueConstraint("tag", name="uix_tag_taxonomy_tag"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    tag: Mapped[str] = mapped_column(String(80), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="pending")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
 class AssetRole(Base):
     __tablename__ = "asset_roles"
     __table_args__ = (UniqueConstraint("asset_id", "role", "scope", name="uix_asset_role_scope"),)

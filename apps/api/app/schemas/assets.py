@@ -26,6 +26,10 @@ class AssetRolePublishInput(BaseModel):
     is_published: bool
 
 
+class TagTaxonomyUpdate(BaseModel):
+    status: str
+
+
 class AssetFocalPointInput(BaseModel):
     x: float = Field(..., ge=0.0, le=1.0)
     y: float = Field(..., ge=0.0, le=1.0)
@@ -52,6 +56,18 @@ class AssetRoleOut(BaseModel):
     is_published: bool
 
 
+class AssetAutoTagJobOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    asset_id: str
+    status: str
+    error_message: str | None
+    created_at: datetime
+    updated_at: datetime
+    started_at: datetime | None
+    completed_at: datetime | None
+
+
 class AssetVariantOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -61,6 +77,19 @@ class AssetVariantOut(BaseModel):
     format: str
     path: str
     version: int
+
+
+class TagTaxonomyOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    tag: str
+    status: str
+    created_at: datetime
+    approved_at: datetime | None
+
+
+class AutoTagResponse(BaseModel):
+    status: str
 
 
 class AssetOut(BaseModel):

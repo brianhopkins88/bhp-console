@@ -5,23 +5,44 @@ import shutil
 from typing import Sequence
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    Query,
+    UploadFile,
+)
 from fastapi.responses import FileResponse
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.core.settings import settings
 from app.db.session import get_db
-from app.models.assets import Asset, AssetRole, AssetTag, AssetVariant
+from app.models.assets import (
+    Asset,
+    AssetAutoTagJob,
+    AssetRole,
+    AssetTag,
+    AssetVariant,
+    TagTaxonomy,
+)
 from app.schemas.assets import (
     AssetDerivativeRequest,
+    AssetAutoTagJobOut,
+    AutoTagResponse,
     AssetFocalPointInput,
     AssetOut,
     AssetRatingInput,
     AssetRoleInput,
     AssetRolePublishInput,
     AssetTagInput,
+    TagTaxonomyOut,
+    TagTaxonomyUpdate,
 )
+from app.services.ai_tagging import queue_auto_tagging_job, set_autotag_job_status
 from app.services.assets import ensure_dir, generate_variants
 
 router = APIRouter()
@@ -35,8 +56,58 @@ def _get_asset_or_404(db: Session, asset_id: str) -> Asset:
 
 
 @router.get("/assets", response_model=list[AssetOut])
-def list_assets(db: Session = Depends(get_db)) -> Sequence[Asset]:
-    return db.execute(select(Asset).order_by(Asset.created_at.desc())).scalars().all()
+def list_assets(
+    db: Session = Depends(get_db),
+    search: str | None = None,
+    tags: list[str] | None = Query(None),
+    roles: list[str] | None = Query(None),
+    orientations: list[str] | None = Query(None),
+    min_rating: int | None = None,
+    starred: bool | None = None,
+    sort: str | None = "newest",
+) -> Sequence[Asset]:
+    stmt = select(Asset)
+
+    if search:
+        term = f"%{search.lower()}%"
+        stmt = stmt.where(
+            or_(
+                func.lower(Asset.original_filename).like(term),
+                Asset.tags.any(func.lower(AssetTag.tag).like(term)),
+            )
+        )
+
+    if tags:
+        stmt = stmt.where(Asset.tags.any(AssetTag.tag.in_(tags)))
+
+    if roles:
+        stmt = stmt.where(Asset.roles.any(AssetRole.role.in_(roles)))
+
+    if orientations:
+        orientation_filters = []
+        if "square" in orientations:
+            orientation_filters.append(Asset.width == Asset.height)
+        if "landscape" in orientations:
+            orientation_filters.append(Asset.width > Asset.height)
+        if "portrait" in orientations:
+            orientation_filters.append(Asset.height > Asset.width)
+        if orientation_filters:
+            stmt = stmt.where(or_(*orientation_filters))
+
+    if min_rating is not None:
+        stmt = stmt.where(Asset.rating >= min_rating)
+
+    if starred is not None:
+        stmt = stmt.where(Asset.starred == starred)
+
+    if sort == "oldest":
+        stmt = stmt.order_by(Asset.created_at.asc())
+    elif sort == "rating":
+        stmt = stmt.order_by(Asset.rating.desc())
+    else:
+        stmt = stmt.order_by(Asset.created_at.desc())
+
+    return db.execute(stmt).scalars().all()
 
 
 @router.get("/assets/{asset_id}", response_model=AssetOut)
@@ -171,6 +242,59 @@ async def upload_asset(
         db.refresh(asset)
 
     return asset
+
+
+@router.post("/assets/{asset_id}/auto-tag", response_model=AutoTagResponse)
+def auto_tag_asset(
+    asset_id: str,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+) -> dict:
+    _get_asset_or_404(db, asset_id)
+    set_autotag_job_status(db, asset_id, "queued")
+    background_tasks.add_task(queue_auto_tagging_job, asset_id)
+    return {"status": "queued"}
+
+
+@router.get("/assets/auto-tag/status", response_model=list[AssetAutoTagJobOut])
+def list_auto_tag_status(
+    asset_ids: list[str] | None = Query(None),
+    db: Session = Depends(get_db),
+) -> Sequence[AssetAutoTagJob]:
+    stmt = select(AssetAutoTagJob)
+    if asset_ids:
+        stmt = stmt.where(AssetAutoTagJob.asset_id.in_(asset_ids))
+    return db.execute(stmt.order_by(AssetAutoTagJob.updated_at.desc())).scalars().all()
+
+
+@router.get("/assets/taxonomy", response_model=list[TagTaxonomyOut])
+def list_tag_taxonomy(
+    status: str | None = None,
+    db: Session = Depends(get_db),
+) -> Sequence[TagTaxonomy]:
+    stmt = select(TagTaxonomy)
+    if status:
+        stmt = stmt.where(TagTaxonomy.status == status)
+    return db.execute(stmt.order_by(TagTaxonomy.tag.asc())).scalars().all()
+
+
+@router.put("/assets/taxonomy/{tag}", response_model=TagTaxonomyOut)
+def update_tag_taxonomy(
+    tag: str,
+    payload: TagTaxonomyUpdate,
+    db: Session = Depends(get_db),
+) -> TagTaxonomy:
+    taxonomy = db.execute(select(TagTaxonomy).where(TagTaxonomy.tag == tag)).scalar_one_or_none()
+    if not taxonomy:
+        taxonomy = TagTaxonomy(tag=tag, status=payload.status)
+        db.add(taxonomy)
+    else:
+        taxonomy.status = payload.status
+    if payload.status == "approved":
+        taxonomy.approved_at = func.now()
+    db.commit()
+    db.refresh(taxonomy)
+    return taxonomy
 
 
 @router.post("/assets/{asset_id}/tags", response_model=AssetOut)

@@ -23,6 +23,22 @@ type AssetVariant = {
   version: number;
 };
 
+type TagTaxonomy = {
+  tag: string;
+  status: string;
+  created_at: string;
+  approved_at?: string | null;
+};
+
+type AutoTagJob = {
+  asset_id: string;
+  status: string;
+  error_message?: string | null;
+  updated_at: string;
+  started_at?: string | null;
+  completed_at?: string | null;
+};
+
 type Asset = {
   id: string;
   original_filename: string;
@@ -77,7 +93,9 @@ const ROLE_OPTIONS = [
   },
 ] as const;
 
-const PUBLISHABLE_ROLES = new Set(["logo", "showcase", "hero_main"]);
+type RoleKey = (typeof ROLE_OPTIONS)[number]["key"];
+
+const PUBLISHABLE_ROLES = new Set<RoleKey>(["logo", "showcase", "hero_main"]);
 
 export default function AdminPhotosPage() {
   const apiBaseUrl =
@@ -109,6 +127,12 @@ export default function AdminPhotosPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [actionMessage, setActionMessage] = useState<string | null>(null);
+  const [uploadQueue, setUploadQueue] = useState<Array<{ id: string; label: string }>>(
+    []
+  );
+  const [uploadProgress, setUploadProgress] = useState<Record<string, number>>({});
+  const [pendingTags, setPendingTags] = useState<TagTaxonomy[]>([]);
   const [tagInputs, setTagInputs] = useState<Record<string, string>>({});
   const [roleSelections, setRoleSelections] = useState<Record<string, string[]>>(
     {}
@@ -138,8 +162,9 @@ export default function AdminPhotosPage() {
   const [sortMode, setSortMode] = useState("newest");
 
   const [selectedAssets, setSelectedAssets] = useState<Set<string>>(new Set());
+  const [autoTagJobs, setAutoTagJobs] = useState<Record<string, AutoTagJob>>({});
   const [bulkTagsInput, setBulkTagsInput] = useState("");
-  const [bulkRoleSelections, setBulkRoleSelections] = useState<Set<string>>(
+  const [bulkRoleSelections, setBulkRoleSelections] = useState<Set<RoleKey>>(
     new Set()
   );
   const [bulkRating, setBulkRating] = useState<number | null>(null);
@@ -156,11 +181,47 @@ export default function AdminPhotosPage() {
     Record<string, boolean>
   >({});
 
+  const selectedAssetIds = useMemo(
+    () => Array.from(selectedAssets),
+    [selectedAssets]
+  );
+
+  const selectedAssetId = useMemo(() => {
+    if (selectedAssets.size !== 1) return null;
+    return selectedAssetIds[0] ?? null;
+  }, [selectedAssets, selectedAssetIds]);
+
+  const buildAssetsQuery = () => {
+    const params = new URLSearchParams();
+    const trimmedSearch = searchTerm.trim();
+    if (trimmedSearch) {
+      params.set("search", trimmedSearch);
+    }
+    selectedTags.forEach((tag) => params.append("tags", tag));
+    selectedRoles.forEach((role) => params.append("roles", role));
+    selectedOrientations.forEach((orientation) =>
+      params.append("orientations", orientation)
+    );
+    if (ratingFilter !== null) {
+      params.set("min_rating", ratingFilter.toString());
+    }
+    if (starredOnly) {
+      params.set("starred", "true");
+    }
+    if (sortMode) {
+      params.set("sort", sortMode);
+    }
+    const query = params.toString();
+    return query ? `?${query}` : "";
+  };
+
   const loadAssets = async () => {
     try {
       setError(null);
       setLoading(true);
-      const response = await fetch(`${apiBaseUrl}/api/v1/assets`);
+      const response = await fetch(
+        `${apiBaseUrl}/api/v1/assets${buildAssetsQuery()}`
+      );
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}`);
       }
@@ -173,9 +234,78 @@ export default function AdminPhotosPage() {
     }
   };
 
+  const loadPendingTags = async () => {
+    try {
+      const response = await fetch(
+        `${apiBaseUrl}/api/v1/assets/taxonomy?status=pending`
+      );
+      if (!response.ok) {
+        return;
+      }
+      const data = (await response.json()) as TagTaxonomy[];
+      setPendingTags(data);
+    } catch {
+      // Ignore taxonomy load errors to keep the page usable.
+    }
+  };
+
+  const loadAutoTagJobs = async (assetIds: string[]) => {
+    if (!assetIds.length) return;
+    const params = new URLSearchParams();
+    assetIds.forEach((assetId) => params.append("asset_ids", assetId));
+    try {
+      const response = await fetch(
+        `${apiBaseUrl}/api/v1/assets/auto-tag/status?${params.toString()}`
+      );
+      if (!response.ok) {
+        return;
+      }
+      const data = (await response.json()) as AutoTagJob[];
+      setAutoTagJobs((prev) => {
+        const next = { ...prev };
+        data.forEach((job) => {
+          next[job.asset_id] = job;
+        });
+        return next;
+      });
+    } catch {
+      // Ignore auto-tag status failures to avoid blocking the UI.
+    }
+  };
+
   useEffect(() => {
     void loadAssets();
+  }, [
+    apiBaseUrl,
+    searchTerm,
+    selectedTags,
+    selectedRoles,
+    selectedOrientations,
+    ratingFilter,
+    starredOnly,
+    sortMode,
+  ]);
+
+  useEffect(() => {
+    void loadPendingTags();
   }, [apiBaseUrl]);
+
+  useEffect(() => {
+    if (!selectedAssetIds.length) return;
+    let cancelled = false;
+
+    const refresh = async () => {
+      if (cancelled) return;
+      await loadAutoTagJobs(selectedAssetIds);
+    };
+
+    void refresh();
+    const interval = window.setInterval(refresh, 6000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [apiBaseUrl, selectedAssetIds]);
 
   useEffect(() => {
     const nextRatings: Record<string, number> = {};
@@ -355,10 +485,35 @@ export default function AdminPhotosPage() {
       .map(([key, items]) => ({ key, label: key, assets: items }));
   }, [filteredAssets, groupBy]);
 
-  const selectedAssetId = useMemo(() => {
-    if (selectedAssets.size !== 1) return null;
-    return Array.from(selectedAssets)[0] ?? null;
-  }, [selectedAssets]);
+  const autoTagSummary = useMemo(() => {
+    const counts = {
+      queued: 0,
+      running: 0,
+      completed: 0,
+      failed: 0,
+      idle: 0,
+    };
+    selectedAssetIds.forEach((assetId) => {
+      const job = autoTagJobs[assetId];
+      if (!job) {
+        counts.idle += 1;
+        return;
+      }
+      const status = job.status;
+      if (status === "queued") counts.queued += 1;
+      else if (status === "running") counts.running += 1;
+      else if (status === "completed") counts.completed += 1;
+      else if (status === "failed") counts.failed += 1;
+      else counts.idle += 1;
+    });
+    return counts;
+  }, [autoTagJobs, selectedAssetIds]);
+
+  const failedAutoTagJob = useMemo(() => {
+    return selectedAssetIds
+      .map((assetId) => autoTagJobs[assetId])
+      .find((job) => job?.status === "failed");
+  }, [autoTagJobs, selectedAssetIds]);
 
   const toggleGroup = (key: string) => {
     setCollapsedGroups((prev) => ({ ...prev, [key]: !prev[key] }));
@@ -384,6 +539,39 @@ export default function AdminPhotosPage() {
     setSelectedAssets(new Set());
   };
 
+  const uploadSingle = async (
+    file: File,
+    uploadId: string,
+    wantsDerivatives: boolean,
+    tags: string
+  ) => {
+    return new Promise<void>((resolve, reject) => {
+      const payload = new FormData();
+      payload.set("file", file);
+      payload.set("generate_derivatives", wantsDerivatives ? "true" : "false");
+      if (tags) {
+        payload.set("tags", tags);
+      }
+
+      const xhr = new XMLHttpRequest();
+      xhr.open("POST", `${apiBaseUrl}/api/v1/assets/upload`);
+      xhr.upload.onprogress = (event) => {
+        if (!event.lengthComputable) return;
+        const nextValue = Math.round((event.loaded / event.total) * 100);
+        setUploadProgress((prev) => ({ ...prev, [uploadId]: nextValue }));
+      };
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          resolve();
+        } else {
+          reject(new Error(`HTTP ${xhr.status}`));
+        }
+      };
+      xhr.onerror = () => reject(new Error("Upload failed"));
+      xhr.send(payload);
+    });
+  };
+
   const handleUpload = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const form = event.currentTarget;
@@ -392,24 +580,24 @@ export default function AdminPhotosPage() {
     const tags = (formData.get("tags") as string) || "";
     const files = formData.getAll("file") as File[];
 
+    if (!files.length) return;
+
     setUploading(true);
     setError(null);
     try {
-      for (const file of files) {
+      const queue = files.map((file, index) => ({
+        id: `${file.name || "file"}-${index}`,
+        label: file.name || `File ${index + 1}`,
+      }));
+      setUploadQueue(queue);
+      setUploadProgress(
+        Object.fromEntries(queue.map((item) => [item.id, 0]))
+      );
+
+      for (const [index, file] of files.entries()) {
         if (!file || !file.name) continue;
-        const uploadData = new FormData();
-        uploadData.set("file", file);
-        uploadData.set("generate_derivatives", wantsDerivatives);
-        if (tags) {
-          uploadData.set("tags", tags);
-        }
-        const response = await fetch(`${apiBaseUrl}/api/v1/assets/upload`, {
-          method: "POST",
-          body: uploadData,
-        });
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}`);
-        }
+        const uploadId = queue[index]?.id ?? `${file.name}-${index}`;
+        await uploadSingle(file, uploadId, wantsDerivatives === "true", tags);
       }
       form.reset();
       await loadAssets();
@@ -417,6 +605,8 @@ export default function AdminPhotosPage() {
       setError((err as Error).message);
     } finally {
       setUploading(false);
+      setUploadQueue([]);
+      setUploadProgress({});
     }
   };
 
@@ -640,6 +830,75 @@ export default function AdminPhotosPage() {
     }
   };
 
+  const handleBulkAutoTag = async () => {
+    if (!selectedAssets.size) return;
+    setBulkWorking(true);
+    setActionError(null);
+    setActionMessage(null);
+    let didQueue = false;
+    try {
+      for (const assetId of selectedAssets) {
+        const response = await fetch(`${apiBaseUrl}/api/v1/assets/${assetId}/auto-tag`, {
+          method: "POST",
+        });
+        if (!response.ok) {
+          throw new Error(`Failed on ${assetId}`);
+        }
+      }
+      didQueue = true;
+      const now = new Date().toISOString();
+      setAutoTagJobs((prev) => {
+        const next = { ...prev };
+        selectedAssetIds.forEach((assetId) => {
+          next[assetId] = {
+            asset_id: assetId,
+            status: "queued",
+            updated_at: now,
+          };
+        });
+        return next;
+      });
+      setActionMessage(
+        `Auto-tagging queued for ${selectedAssets.size} asset${
+          selectedAssets.size === 1 ? "" : "s"
+        }. Results may take a minute.`
+      );
+      if (lane === "inbox") {
+        setTimeout(() => setLane("review"), 2500);
+      }
+    } catch (err) {
+      setActionError((err as Error).message);
+    } finally {
+      setBulkWorking(false);
+      if (didQueue) {
+        setTimeout(() => {
+          void loadAssets();
+          void loadPendingTags();
+          void loadAutoTagJobs(selectedAssetIds);
+        }, 2000);
+        setTimeout(() => {
+          void loadAssets();
+          void loadPendingTags();
+          void loadAutoTagJobs(selectedAssetIds);
+        }, 8000);
+      }
+    }
+  };
+
+  const handleApproveTag = async (tag: string) => {
+    setActionError(null);
+    const response = await fetch(`${apiBaseUrl}/api/v1/assets/taxonomy/${tag}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status: "approved" }),
+    });
+    if (!response.ok) {
+      setActionError(`Failed to approve ${tag}.`);
+      return;
+    }
+    await loadPendingTags();
+  };
+
   const handleBulkRoles = async () => {
     if (!selectedAssets.size) return;
     const roles = Array.from(bulkRoleSelections);
@@ -659,6 +918,40 @@ export default function AdminPhotosPage() {
         }
       }
       setBulkRoleSelections(new Set());
+      await loadAssets();
+    } catch (err) {
+      setActionError((err as Error).message);
+    } finally {
+      setBulkWorking(false);
+    }
+  };
+
+  const handleBulkPublish = async (role: RoleKey, isPublished: boolean) => {
+    if (!selectedAssets.size) return;
+    setBulkWorking(true);
+    setActionError(null);
+    try {
+      for (const assetId of selectedAssets) {
+        const currentRoles = roleSelections[assetId] ?? [];
+        if (!currentRoles.includes(role)) {
+          continue;
+        }
+        const currentPublished = rolePublished[assetId]?.[role] ?? false;
+        if (currentPublished === isPublished) {
+          continue;
+        }
+        const response = await fetch(
+          `${apiBaseUrl}/api/v1/assets/${assetId}/roles/${role}/publish`,
+          {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ is_published: isPublished }),
+          }
+        );
+        if (!response.ok) {
+          throw new Error(`Failed on ${assetId}`);
+        }
+      }
       await loadAssets();
     } catch (err) {
       setActionError((err as Error).message);
@@ -893,12 +1186,30 @@ export default function AdminPhotosPage() {
                 className="rounded-full border border-zinc-200 px-3 py-2 text-xs text-zinc-700"
               />
             </label>
-            <span>Tip: use the tag "logo" for special handling.</span>
+            <span>Tip: use the tag &quot;logo&quot; for special handling.</span>
           </div>
         </form>
         {error ? <p className="mt-3 text-sm text-red-600">{error}</p> : null}
-        {actionError ? (
-          <p className="mt-3 text-sm text-red-600">{actionError}</p>
+        {uploading && uploadQueue.length ? (
+          <div className="mt-3 space-y-2">
+            {uploadQueue.map((item) => {
+              const progress = uploadProgress[item.id] ?? 0;
+              return (
+                <div key={item.id} className="space-y-1">
+                  <div className="flex items-center justify-between text-xs text-zinc-500">
+                    <span className="truncate">{item.label}</span>
+                    <span>{progress}%</span>
+                  </div>
+                  <div className="h-2 overflow-hidden rounded-full bg-zinc-100">
+                    <div
+                      className="h-full rounded-full bg-emerald-500 transition-all"
+                      style={{ width: `${progress}%` }}
+                    />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         ) : null}
       </section>
 
@@ -982,6 +1293,36 @@ export default function AdminPhotosPage() {
                 )}
               </div>
             ) : null}
+          </div>
+
+          <div className="rounded-2xl border border-zinc-200 bg-white p-4">
+            <div className="flex items-center justify-between text-xs font-semibold uppercase tracking-wide text-zinc-500">
+              Tag approvals
+              <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] text-amber-700">
+                {pendingTags.length}
+              </span>
+            </div>
+            <div className="mt-3 space-y-2">
+              {pendingTags.length ? (
+                pendingTags.map((item) => (
+                  <div
+                    key={item.tag}
+                    className="flex items-center justify-between gap-2 text-xs text-zinc-600"
+                  >
+                    <span className="truncate">{item.tag}</span>
+                    <button
+                      type="button"
+                      onClick={() => void handleApproveTag(item.tag)}
+                      className="rounded-full border border-emerald-200 px-3 py-1 text-[11px] font-semibold text-emerald-700"
+                    >
+                      Approve
+                    </button>
+                  </div>
+                ))
+              ) : (
+                <p className="text-xs text-zinc-400">No pending tags</p>
+              )}
+            </div>
           </div>
 
           <div className="rounded-2xl border border-zinc-200 bg-white p-4">
@@ -1177,17 +1518,22 @@ export default function AdminPhotosPage() {
 
           {selectedAssets.size ? (
             <div className="rounded-2xl border border-zinc-200 bg-white p-4">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <p className="text-sm font-semibold text-zinc-900">
-                  {selectedAssets.size} selected
-                </p>
+              <div className="relative z-10 flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <p className="text-sm font-semibold text-zinc-900">
+                    {selectedAssets.size} selected
+                  </p>
+                  <p className="text-xs text-zinc-500">
+                    Bulk actions apply to the selected assets.
+                  </p>
+                </div>
                 <div className="flex flex-wrap gap-2">
                   <button
                     type="button"
                     onClick={clearSelection}
                     className="rounded-full border border-zinc-200 px-3 py-2 text-xs font-semibold text-zinc-600"
                   >
-                    Clear
+                    Unselect all
                   </button>
                   <button
                     type="button"
@@ -1227,25 +1573,47 @@ export default function AdminPhotosPage() {
                   </button>
                 </div>
               </div>
-              <div className="mt-4 grid gap-3 lg:grid-cols-3">
-                <div className="flex items-center gap-2">
-                  <input
-                    value={bulkTagsInput}
-                    onChange={(event) => setBulkTagsInput(event.target.value)}
-                    placeholder="Add tags"
-                    className="flex-1 rounded-full border border-zinc-200 px-3 py-2 text-xs"
-                  />
-                  <button
-                    type="button"
-                    onClick={handleBulkTags}
-                    disabled={bulkWorking}
-                    className="rounded-full border border-zinc-200 px-3 py-2 text-xs font-semibold text-zinc-600"
-                  >
-                    Apply
-                  </button>
+              <div className="mt-4 grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
+                <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">
+                    Tags
+                  </p>
+                  <div className="mt-2 flex flex-col gap-2">
+                    <input
+                      value={bulkTagsInput}
+                      onChange={(event) => setBulkTagsInput(event.target.value)}
+                      placeholder="Add tags"
+                      className="w-full rounded-full border border-zinc-200 px-3 py-2 text-xs"
+                    />
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={handleBulkTags}
+                        disabled={bulkWorking || !bulkTagsInput.trim()}
+                        className={`rounded-full border px-3 py-2 text-xs font-semibold transition ${
+                          bulkWorking || !bulkTagsInput.trim()
+                            ? "cursor-not-allowed border-zinc-100 text-zinc-300"
+                            : "border-zinc-200 text-zinc-600 hover:border-zinc-300"
+                        }`}
+                      >
+                        Apply
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleBulkAutoTag}
+                        disabled={bulkWorking}
+                        className="rounded-full border border-zinc-200 px-3 py-2 text-xs font-semibold text-zinc-600"
+                      >
+                        Auto-tag
+                      </button>
+                    </div>
+                  </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  <div className="flex flex-wrap gap-2">
+                <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">
+                    Roles
+                  </p>
+                  <div className="mt-2 flex flex-wrap gap-2">
                     {ROLE_OPTIONS.map((role) => {
                       const isActive = bulkRoleSelections.has(role.key);
                       const isDisabled = role.key === "hero_main";
@@ -1271,36 +1639,106 @@ export default function AdminPhotosPage() {
                       );
                     })}
                   </div>
-                  <button
-                    type="button"
-                    onClick={handleBulkRoles}
-                    disabled={bulkWorking}
-                    className="rounded-full border border-zinc-200 px-3 py-2 text-xs font-semibold text-zinc-600"
-                  >
-                    Apply roles
-                  </button>
-                </div>
-                <p className="text-[11px] text-zinc-400">
-                  Hero main is set with the “Set hero main” action.
-                </p>
-                <div className="flex items-center gap-2">
-                  {[1, 2, 3, 4, 5].map((value) => (
+                  <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-[11px] text-zinc-500">
+                    <span>Hero main is set via the top action.</span>
                     <button
-                      key={value}
                       type="button"
-                      onClick={() => handleBulkRating(value)}
+                      onClick={handleBulkRoles}
                       disabled={bulkWorking}
-                      className={`h-8 w-8 rounded-full border text-xs ${
-                        bulkRating === value
-                          ? "border-amber-400 bg-amber-100 text-amber-700"
-                          : "border-zinc-200 text-zinc-500"
-                      }`}
+                      className="rounded-full border border-zinc-200 px-3 py-2 text-xs font-semibold text-zinc-600"
                     >
-                      ★
+                      Apply roles
                     </button>
-                  ))}
+                  </div>
+                </div>
+                <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">
+                    Publish
+                  </p>
+                  <div className="mt-2 space-y-2">
+                    {ROLE_OPTIONS.filter(
+                      (role) =>
+                        PUBLISHABLE_ROLES.has(role.key) && role.key !== "hero_main"
+                    ).map((role) => (
+                      <div
+                        key={`bulk-publish-${role.key}`}
+                        className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-zinc-600"
+                      >
+                        <span>{role.label}</span>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => handleBulkPublish(role.key, true)}
+                            disabled={bulkWorking}
+                            className="rounded-full border border-emerald-200 px-3 py-2 font-semibold text-emerald-700"
+                          >
+                            Publish
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleBulkPublish(role.key, false)}
+                            disabled={bulkWorking}
+                            className="rounded-full border border-zinc-200 px-3 py-2 font-semibold text-zinc-500"
+                          >
+                            Unpublish
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="mt-2 text-[11px] text-zinc-400">
+                    Only applies to assets that already have the role.
+                  </p>
+                </div>
+                <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">
+                    Rating
+                  </p>
+                  <div className="mt-2 flex items-center gap-2">
+                    {[1, 2, 3, 4, 5].map((value) => (
+                      <button
+                        key={value}
+                        type="button"
+                        onClick={() => handleBulkRating(value)}
+                        disabled={bulkWorking}
+                        className={`h-8 w-8 rounded-full border text-xs ${
+                          bulkRating === value
+                            ? "border-amber-400 bg-amber-100 text-amber-700"
+                            : "border-zinc-200 text-zinc-500"
+                        }`}
+                      >
+                        ★
+                      </button>
+                    ))}
+                  </div>
                 </div>
               </div>
+              <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-xs text-zinc-500">
+                <span>
+                  Auto-tag status: queued {autoTagSummary.queued}, running{" "}
+                  {autoTagSummary.running}, completed {autoTagSummary.completed}, failed{" "}
+                  {autoTagSummary.failed}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => void loadAutoTagJobs(selectedAssetIds)}
+                  disabled={bulkWorking}
+                  className="rounded-full border border-zinc-200 px-3 py-1 text-[11px] font-semibold text-zinc-600"
+                >
+                  Refresh status
+                </button>
+              </div>
+              {failedAutoTagJob?.error_message ? (
+                <p className="mt-2 text-xs text-red-600">
+                  Auto-tag failed: {failedAutoTagJob.error_message}
+                </p>
+              ) : null}
+              {actionError ? (
+                <p className="mt-2 text-sm text-red-600">{actionError}</p>
+              ) : null}
+              {actionMessage ? (
+                <p className="mt-2 text-sm text-emerald-600">{actionMessage}</p>
+              ) : null}
             </div>
           ) : null}
 

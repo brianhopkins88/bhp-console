@@ -474,17 +474,71 @@ Isolation:
 
 ------
 
-## 7. Security and reliability
+## 7. AI systems
+
+### 7.1 AI workloads (current)
+
+- Image auto-tagging (OpenAI vision) for service taxonomy
+- Conversational site builder (planned) for template selection + content updates
+- Draft generation (planned) for captions, posts, and blog outlines
+
+### 7.2 Image tagging architecture
+
+- Input: selected asset(s) from the photo library
+- Pre-processing: generate a low-bandwidth derivative (JPEG, max width 512px)
+- Model call: OpenAI Responses API with strict JSON schema output
+- Output: service tags + confidence + suggested tags
+- Storage:
+  - Tag assignments stored as `source=auto` with confidence
+  - Suggested tags queued as taxonomy candidates (pending approval)
+
+### 7.3 Job tracking and status
+
+- Auto-tag jobs tracked per asset with lifecycle: queued → running → completed/failed
+- UI shows job status summary and error messages for failed runs
+- Jobs are backgrounded to avoid blocking request/response flow
+
+### 7.4 Tag taxonomy governance
+
+- Approved taxonomy powers auto-placement rules on the site
+- Suggested tags require explicit approval before entering the taxonomy
+- Role assignment rules enforced (hero_main uniqueness, published constraints)
+
+### 7.5 Model and prompt versioning
+
+- OpenAI SDK pinned in `apps/api/requirements.txt`
+- Model name, prompt version, schema version stored in API settings
+- Changes require smoke tests on a single image before batch runs
+
+### 7.6 API compatibility checklist
+
+- Confirm model supports every parameter passed (e.g., some models reject `temperature`)
+- Use the correct API surface (Responses vs Chat Completions) for the model
+- Log response/parse errors and store failure reasons in job records
+- Keep CA bundle configuration for environments with SSL inspection
+
+------
+
+## 8. Security and reliability
 
 ### Authentication and secrets
 
 - Local auth (single-user initially)
+- Admin UI protected by basic auth on `/admin`
 - Encryption for tokens at rest
 - Never store raw credentials in logs
+- API keys stored via environment variables (local `.env`, hosted secrets)
+- OpenAI API key uses explicit env config with versioned model/prompt/schema settings
 
 ### Spam protection
 
 - Honeypot field, rate limiting, optional CAPTCHA
+
+### Transport security
+
+- TLS verification enforced for external calls
+- Optional custom CA bundle support for local environments with SSL inspection (`BHP_OPENAI_CA_BUNDLE`)
+- Minimize data sent to external AI services by using resized image derivatives
 
 ### Auditability
 
@@ -500,19 +554,20 @@ Isolation:
 - Idempotent jobs
 - Retries for transient connector failures
 - Catch-up for scheduled tasks after laptop sleep
+- Background jobs isolate long-running AI tasks from request/response latency
 
 ------
 
-## 8. Deployment model (local-first)
+## 9. Deployment model (local-first)
 
-### 8.1 Local development (current)
+### 9.1 Local development (current)
 
 - Primary workflow runs on a laptop.
 - UI and API run in separate terminals (`make ui`, `make api`).
 - Supporting services (Postgres, Redis, Qdrant) run via Docker Compose (`make infra-up`).
 - Photo storage lives in `storage/` by default.
 
-### 8.2 Current hosted wiring (staging)
+### 9.2 Current hosted wiring (staging)
 
 The current hosted setup is a staging deployment used to validate the wiring between UI, API, and DNS.
 
