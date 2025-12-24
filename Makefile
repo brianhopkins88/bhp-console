@@ -34,13 +34,13 @@ session-stop:
 
 seed-staging:
 	@if [ -z "$$BHP_SEED_UPLOAD_DIR" ]; then \
-		echo "Set BHP_SEED_UPLOAD_DIR=/path/to/images"; \
+		echo "Set BHP_SEED_UPLOAD_DIR=$(PWD)/storage/library/originals"; \
 		exit 1; \
 	fi
 	@API_BASE_URL="$${BHP_SEED_API_BASE_URL:-https://bhp-console.onrender.com}"; \
 	PYTHON_BIN="$${BHP_SEED_PYTHON_BIN:-python}"; \
-	ARGS="--api-base-url $$API_BASE_URL --dir $$BHP_SEED_UPLOAD_DIR"; \
-	if [ -n "$$BHP_SEED_TAGS" ]; then ARGS="$$ARGS --tags $$BHP_SEED_TAGS"; fi; \
-	if [ -n "$$BHP_SEED_LIMIT" ]; then ARGS="$$ARGS --limit $$BHP_SEED_LIMIT"; fi; \
-	if [ "$${BHP_SEED_NO_DERIVATIVES:-0}" = "1" ]; then ARGS="$$ARGS --no-derivatives"; fi; \
-	$$PYTHON_BIN apps/api/scripts/seed_staging_uploads.py $$ARGS
+	ARGS=(--api-base-url "$$API_BASE_URL" --dir "$$BHP_SEED_UPLOAD_DIR"); \
+	if [ -n "$$BHP_SEED_TAGS" ]; then ARGS+=(--tags "$$BHP_SEED_TAGS"); fi; \
+	if [ -n "$$BHP_SEED_LIMIT" ]; then ARGS+=(--limit "$$BHP_SEED_LIMIT"); fi; \
+	if [ "$${BHP_SEED_NO_DERIVATIVES:-0}" = "1" ]; then ARGS+=(--no-derivatives); fi; \
+	$$PYTHON_BIN apps/api/scripts/seed_staging_uploads.py "$${ARGS[@]}"
