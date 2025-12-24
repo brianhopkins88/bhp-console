@@ -46,6 +46,7 @@ Remember:
 - Vercel/Render stay up without any local session scripts.
 - Render start command: `./scripts/render_start.sh` (runs Alembic migrations before boot).
 - Optional staging seed: `python apps/api/scripts/seed_staging_uploads.py --api-base-url https://bhp-console.onrender.com --dir /path/to/images`
+- Optional staging seed (Makefile): `BHP_SEED_UPLOAD_DIR=/path/to/images make seed-staging`
 
 Dev-only auto-seed on git push (optional):
 - Install the hook: `cp scripts/hooks/post-push .git/hooks/post-push && chmod +x .git/hooks/post-push`
