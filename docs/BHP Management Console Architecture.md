@@ -598,6 +598,14 @@ flowchart LR
     - `BHP_CORS_ORIGINS=["https://staging.brianhopkinsphoto.com"]`
   - Health check: `https://bhp-console.onrender.com/api/v1/health`
   - Free tier note: instances can spin down and cold start on first request
+- Database: Render Postgres (staging)
+  - Name: `bhp-console-db`
+  - ID: `dpg-d55uuiq4d50c73dmmjmg-a`
+  - Host: `dpg-d55uuiq4d50c73dmmjmg-a.oregon-postgres.render.com`
+  - Port: `5432`
+  - User: `bhp_console_db_user`
+  - Database: `bhp_console_db`
+  - External URL: set as a secret env var in Render (do not commit credentials)
 - DNS: GoDaddy manages the root domain; staging uses a CNAME to Vercel.
 
 ### 8.4 Docker Compose (recommended)

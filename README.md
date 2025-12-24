@@ -40,6 +40,8 @@ Session notes:
 - UI: Vercel (root: `apps/ui`, framework: Next.js)
 - API: Render (root: `apps/api`)
 - DNS: GoDaddy CNAME for `staging.brianhopkinsphoto.com` -> Vercel
+Warning:
+- Render Postgres free tier expires on January 23, 2026 and will be deleted unless upgraded to a paid instance.
 Remember:
 - Redeploy Vercel/Render after changing environment variables.
 - Render free tier can cold start; first request may be slow.
