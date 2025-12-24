@@ -49,6 +49,11 @@ Remember:
 - Render start command: `./scripts/render_start.sh` (runs Alembic migrations before boot).
 - Optional staging seed: `python apps/api/scripts/seed_staging_uploads.py --api-base-url https://bhp-console.onrender.com --dir /path/to/images`
 - Optional staging seed (Makefile): `BHP_SEED_UPLOAD_DIR=/path/to/images make seed-staging`
+Staging specifics:
+- API uses Render Postgres. Set `BHP_DATABASE_URL` and `DATABASE_URL` in Render.
+- DB URL must use `postgresql+psycopg://` (Render's default `postgresql://` triggers psycopg2 import errors).
+- Set `BHP_OPENAI_API_KEY` in Render (secret env var).
+- Storage in staging is the service filesystem; attach a disk or use object storage for durability.
 
 Dev-only auto-seed on git push (optional):
 - Install the hook: `cp scripts/hooks/post-push .git/hooks/post-push && chmod +x .git/hooks/post-push`
@@ -59,6 +64,12 @@ Dev-only auto-seed on git push (optional):
   - `BHP_SEED_LIMIT=20` (optional)
   - `BHP_SEED_NO_DERIVATIVES=1` (optional)
   - `BHP_SEED_ON_PUSH=0` to disable when you want to be careful.
+
+Sync workflow (dev -> staging):
+- Push to GitHub -> Vercel/Render deploy from `main`.
+- Render start script runs Alembic migrations on every deploy.
+- Use `make seed-staging` to copy local originals into staging.
+- Seed adds data; to fully overwrite staging, wipe the staging DB/storage first.
 
 ## Public site pages (planned)
 - Home (`/`)
@@ -82,6 +93,8 @@ Environment variables:
 - Vercel: `NEXT_PUBLIC_API_BASE_URL=https://bhp-console.onrender.com`
 - Render: `BHP_CORS_ORIGINS=["https://staging.brianhopkinsphoto.com"]`
 - Render DB: set `BHP_DATABASE_URL` or `DATABASE_URL` (the start script maps it).
+Seed script TLS:
+- If your local TLS chain requires a custom CA, set `BHP_CA_BUNDLE` (or `SSL_CERT_FILE` / `REQUESTS_CA_BUNDLE`) before running `make seed-staging`.
 
 ## Tests
 - API: `cd apps/api && pytest`

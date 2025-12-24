@@ -560,28 +560,43 @@ Isolation:
 
 ## 9. Deployment model (local-first)
 
-### 9.1 Local development (current)
+### 9.1 Local development (dev)
 
 - Primary workflow runs on a laptop.
 - UI and API run in separate terminals (`make ui`, `make api`).
 - Supporting services (Postgres, Redis, Qdrant) run via Docker Compose (`make infra-up`).
-- Photo storage lives in `storage/` by default.
+- UI env: `apps/ui/.env.local`
+- API env: repo root `.env` (loaded via `BHP_` prefix).
+- Photo storage lives in `storage/library/originals` and `storage/library/derived`.
+- Outbound TLS can use a custom CA bundle for local SSL inspection (`BHP_OPENAI_CA_BUNDLE`).
+
+```mermaid
+flowchart LR
+  Browser["Browser"] --> UI["Next.js dev server (localhost:3000)"]
+  UI --> API["FastAPI (localhost:8001)"]
+  API --> DB["Postgres (Docker)"]
+  API --> Storage["Local storage/"]
+  API --> OpenAI["OpenAI API"]
+```
 
 ### 9.2 Current hosted wiring (staging)
 
-The current hosted setup is a staging deployment used to validate the wiring between UI, API, and DNS.
+The current hosted setup is a staging deployment used to validate the wiring between UI, API, DB, and DNS.
 
 ```mermaid
 flowchart LR
   Browser["Browser"] --> DNS["GoDaddy DNS: staging.brianhopkinsphoto.com"]
   DNS --> Vercel["Vercel: Next.js UI (apps/ui)"]
   Vercel --> Render["Render: FastAPI API (apps/api)"]
+  Render --> RenderDB["Render Postgres"]
+  Render --> OpenAI["OpenAI API"]
 
   GitHub["GitHub: brianhopkins88/bhp-console"] --> Vercel
   GitHub --> Render
+  DevSeed["Dev seed script"] --> Render
 ```
 
-### 8.3 Hosted configuration details (current)
+### 9.3 Hosted configuration details (current)
 
 - Git hosting: GitHub repo `brianhopkins88/bhp-console` with default branch `main`.
 - UI hosting: Vercel
@@ -589,13 +604,17 @@ flowchart LR
   - Framework preset: Next.js
   - Environment variables:
     - `NEXT_PUBLIC_API_BASE_URL=https://bhp-console.onrender.com`
+    - `ADMIN_BASIC_AUTH_USER`, `ADMIN_BASIC_AUTH_PASS`
   - Domain: `staging.brianhopkinsphoto.com` (CNAME configured in GoDaddy)
 - API hosting: Render (Web Service)
   - Root directory: `apps/api`
   - Build command: `pip install -r requirements.txt`
-  - Start command: `uvicorn app.main:app --host 0.0.0.0 --port $PORT`
+  - Start command: `./scripts/render_start.sh` (runs Alembic then starts Uvicorn)
   - Environment variables:
     - `BHP_CORS_ORIGINS=["https://staging.brianhopkinsphoto.com"]`
+    - `BHP_OPENAI_API_KEY` (set in Render secrets)
+    - `BHP_DATABASE_URL` and `DATABASE_URL`
+      - Must use `postgresql+psycopg://` scheme to avoid psycopg2 import errors.
   - Health check: `https://bhp-console.onrender.com/api/v1/health`
   - Free tier note: instances can spin down and cold start on first request
 - Database: Render Postgres (staging)
@@ -606,9 +625,29 @@ flowchart LR
   - User: `bhp_console_db_user`
   - Database: `bhp_console_db`
   - External URL: set as a secret env var in Render (do not commit credentials)
+  - Expiration warning: free tier expires on January 23, 2026 unless upgraded.
+- Storage: API writes to the service filesystem.
+  - For durable staging storage, attach a Render disk or move to object storage (S3/MinIO).
 - DNS: GoDaddy manages the root domain; staging uses a CNAME to Vercel.
 
-### 8.4 Docker Compose (recommended)
+### 9.4 Sync, migrations, and seed workflow
+
+- Code sync:
+  - Push to GitHub -> Vercel/Render auto-deploy from `main`.
+- Schema sync:
+  - `./scripts/render_start.sh` runs `alembic upgrade head` on every Render deploy.
+  - Requires `BHP_DATABASE_URL` or `DATABASE_URL` set in Render.
+  - Local dev runs Alembic manually during development.
+- Optional seed (dev -> staging):
+  - Script: `apps/api/scripts/seed_staging_uploads.py`
+  - Make target: `BHP_SEED_UPLOAD_DIR=/path/to/originals make seed-staging`
+  - Uses the staging API to upload assets and trigger derivative generation.
+  - Uses CA bundle if needed: `BHP_CA_BUNDLE`, `SSL_CERT_FILE`, or `REQUESTS_CA_BUNDLE`.
+  - Seed adds data; to overwrite staging completely, wipe staging DB/storage first.
+- Optional hook:
+  - `scripts/hooks/post-push` can run the seed script after `git push` (dev-only).
+
+### 9.5 Docker Compose (recommended)
 
 Containers:
 
@@ -623,7 +662,7 @@ Containers:
 
 ------
 
-## 9. Technology choices (recommended defaults)
+## 10. Technology choices (recommended defaults)
 
 ### MVP defaults
 
@@ -637,7 +676,7 @@ Containers:
 
 ------
 
-## 10. Roadmap mapping
+## 11. Roadmap mapping
 
 ### MVP
 
@@ -663,7 +702,7 @@ Containers:
 - Assistive group posting with rules
 - Automated anomaly alerts for spend and performance
 
-## 11. Appendix: Suggested repo structure
+## 12. Appendix: Suggested repo structure
 
 ```
 bhp-console/
