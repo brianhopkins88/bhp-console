@@ -6,6 +6,24 @@
 - Next step:
 - Notes/decisions:
 
+## 2025-12-23
+- What I worked on:
+  - Stabilized staging deployment: Render start script runs Alembic migrations and uses psycopg URL scheme.
+  - Documented dev/staging wiring with diagrams, env vars, and migration/seed workflows.
+  - Added staging seed scripts and Makefile target for uploading local originals to staging.
+  - Added OpenAI usage tracking, balance UI link, and auto-tagging job status/polling (earlier in session).
+  - Resolved staging DB wiring issues and documented Render Postgres warning/metadata.
+- Current status:
+  - Staging API boots cleanly with Alembic migrations and health check returns OK.
+  - Dev and staging environment workflow is documented in README and architecture doc.
+  - Optional seed tooling is available via `make seed-staging`.
+- Next step:
+  - Set `BHP_OPENAI_API_KEY` in Render and validate auto-tagging on staging.
+  - Seed staging with a small image set and verify review workflow.
+- Notes/decisions:
+  - Render requires `postgresql+psycopg://` URLs to avoid psycopg2 import errors.
+  - Render free tier DB expires Jan 23, 2026; plan upgrade before then.
+
 ## 2025-12-22
 - What I worked on:
   - Implemented asset storage + API endpoints for uploads, tagging, roles, ratings, focal points, thumbnails, previews, and deletes.
