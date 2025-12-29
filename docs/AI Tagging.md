@@ -23,6 +23,7 @@ so the OpenAI client can validate TLS.
 - Prefer response schemas that are valid for the chosen API surface (Responses vs. Chat Completions).
 - Pin the SDK version and record the model name, prompt version, and schema version in this doc.
 - When changing models, run a single-image smoke test before batch jobs.
+- See `docs/OpenAI API Spec Notes.md` for the broader OpenAI API pinning and lessons learned log.
 
 ## API flow
 - Request: `POST /api/v1/assets/{asset_id}/auto-tag`

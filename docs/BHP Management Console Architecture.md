@@ -2,9 +2,23 @@
 ## Architecture Document (Agentic AI Edition)
 
 ### Document status
-- Version: v0.4
+- Version: v0.5
 - Scope: Local-first web application running on a laptop initially, designed to evolve to cloud-hosted components later.
-- Key change from v0.3: added conversational site builder and agentic execution/testing for site updates.
+- Multi-tenant intent: the console will support multiple photography businesses; local dev can run in single-user mode.
+- Key change from v0.4: aligned architecture to site intake + auto-generation + publishing flow and added an Epic 0 migration plan.
+
+### Decision log (index)
+
+- D1: Vector store choice (pgvector) -> see Appendix 14
+- D2: Semantic memory scope for site intake -> see Appendix 14
+- D3: Embedding model and dimensions -> see Appendix 14
+- D4: Agent run tracking and approval log (MVP) -> see Appendix 14
+- D5: Modular monolith boundaries -> see Appendix 14
+
+### Documentation maintenance
+
+- Keep the Epic 0 module inventory in `docs/WORKLOG.md` updated when adding or moving code modules.
+- Update the README docs section to point to the inventory when it changes.
 
 ---
 
@@ -12,21 +26,25 @@
 
 ### 1.1 Vision
 A web application that helps automate and manage the core functions of a small photography business:
-- Website creation and publishing
-- Website portfolio freshness management
+- Website intake, creation, and publishing
+- Image library intake, tagging taxonomy, and portfolio freshness management
 - Social marketing automation (Facebook, Instagram, others later)
 - Paid advertising planning and execution (Meta first, Google second)
 - Blog drafting and promotion
 - Internal activity journal (notes + best photos) to fuel content recommendations
 - Contact management (CRM) + inbound inquiry handling + proposal drafting
 - Simple finance tracking + tax-category expense reporting
+This console is intended to be multi-tenant so each business has isolated data, assets, and published websites.
 
 ### 1.2 Core principles
 - Local-first: runs on a laptop with minimal setup.
 - Human-in-the-loop automation: nothing posts/sends/publishes/spends by default without approval.
 - Agentic where it helps: agents plan and execute multi-step tasks with tool use, but are constrained by policy.
+- Memory-first AI: store business profile, site structure, and tag taxonomy for reuse across agent runs.
+- Guardrailed conversations: unsupported intents return a fixed guidance message and supported prompt options.
 - Modular boundaries: start as a modular monolith but preserve clean interfaces for later service extraction.
 - Connector-based integrations: external systems are accessed only through schema-validated tools.
+- Multi-tenant by default: all data, jobs, and policies are scoped to a tenant/business.
 
 ### 1.3 Out of scope (for early versions)
 - Full e-commerce / online payments
@@ -38,8 +56,11 @@ A web application that helps automate and manage the core functions of a small p
 ## 2. Requirements drivers
 
 ### 2.1 Key functional drivers (from story map)
-- MVP: AI image classification pipeline, photo library workflow (upload -> tag -> roles), AI website generation with iterative feedback, staging deploy and publish governance.
-- V1: journal-driven recommendations, SEO helpers, client intake forms, improved reporting.
+- Epic 0: migration to agent runtime + tool gateway + memory store with safety gating for changes.
+- Epic 1: site intake conversation, site structure and topic taxonomy approval, image upload + topic tagging.
+- Epic 2: template-based website generation with feedback chat, staging review, photo governance, SEO and performance helpers.
+- Epic 3: publish workflow with pre-publish checks, hosting setup, and rollback.
+- V1: journal-driven recommendations, client intake forms, improved reporting.
 - V2+: paid ads automation and "free ads" group posting with rules awareness.
 - Primary complexity: agentic website updates from natural language must map to templates, apply safe changes, and run automated checks.
 
@@ -56,7 +77,7 @@ A web application that helps automate and manage the core functions of a small p
 ### 3.1 Architecture style
 - Modular monolith (initial) with a dedicated Agent Runtime and Tool Gateway.
 - Background job system for scheduled and long-running agent sessions.
-- Database + photo storage + optional vector store for semantic retrieval.
+- Database + photo storage for authoritative records, with pgvector for semantic retrieval and agent memory.
 - AI pipelines for image tagging and site generation with versioned outputs.
 
 ### 3.2 System context
@@ -72,12 +93,12 @@ A web application that helps automate and manage the core functions of a small p
 
 ```mermaid
 flowchart LR
-  User["Brian - Browser"] --> UI["Web UI (Agent Inbox + Editors)"]
+  User["Photographer - Browser"] --> UI["Web UI (Agent Inbox + Editors)"]
   UI --> API["API Server (Domain + Auth + Policy)"]
 
   API --> DB[(Postgres or SQLite)]
   API --> FS["Photo Storage (Filesystem or MinIO)"]
-  API --> VEC["Vector Store (pgvector or Qdrant)"]
+  API --> VEC["Vector Store (pgvector)"]
 
   API --> AR["Agent Runtime (Orchestrator)"]
   AR --> PE["Policy and Guardrails"]
@@ -112,6 +133,9 @@ flowchart LR
   - review AI tags and manual tags
   - assign roles (hero_main, logo, showcase, gallery, social)
   - manage publish status for roles
+- Site intake workflow:
+  - collect business description and service details
+  - review and approve site structure and topic taxonomy
 - Website generation workflow:
   - select templates
   - generate site drafts
@@ -122,6 +146,7 @@ flowchart LR
 ### Suggested admin routes (scaffolding)
 
 - `/admin/photos` -> upload, tag review, roles, publish state
+- `/admin/site-intake` -> business profile, site structure, topic taxonomy approvals
 - `/admin/site-builder` -> conversational UI + change requests
 - `/admin/site-builder/versions` -> site version history and diffs
 - `/admin/site-builder/runs` -> agent runs, logs, and outputs
@@ -139,6 +164,7 @@ flowchart LR
 ### Responsibilities
 
 - Domain logic:
+  - Business profile, site structure, and topic taxonomy management
   - Website pages, templates, site versioning, and publish pipeline
   - Conversational change requests and AI-driven site updates
   - Agent run execution, logs, and automated test results
@@ -161,6 +187,11 @@ flowchart LR
 
 ### Suggested API surface (scaffolding)
 
+- `POST /api/v1/site/intake` -> start intake flow and propose site structure + topic taxonomy
+- `GET /api/v1/site/structure` -> fetch current site structure and page descriptions
+- `PUT /api/v1/site/structure` -> update site structure after approval
+- `GET /api/v1/site/taxonomy` -> list approved topic tags
+- `POST /api/v1/site/taxonomy/proposals` -> propose new topic tags for approval
 - `GET /api/v1/site/templates` -> list available templates
 - `POST /api/v1/site/generate` -> generate a site draft from template + tags
 - `POST /api/v1/site/feedback` -> submit conversational instructions
@@ -191,13 +222,14 @@ Enable "agentified" automations that can plan and execute multi-step tasks using
   - Execute site change requests and generate updated site versions
   - Run automated checks/tests and report results
 - Memory:
-  - Retrieve relevant context (brand voice, past posts, journal notes, templates)
+  - Retrieve relevant context (business profile, site structure, tag taxonomy, brand voice, past posts, templates)
   - Store outcomes for later use
 - Safety:
   - Never directly access external systems
   - Must call tools via the Tool Gateway
   - Must comply with Policy and Guardrails decisions
   - Ask clarifying questions when user instructions do not fit a template safely
+  - Return a fixed out-of-scope message when requests fall outside supported intents
 
 ### Suggested agent roles (can start as one, split later)
 
@@ -233,6 +265,9 @@ Provide a single controlled interface between agents and the rest of the system.
 ### Example tool set
 
 - Website
+  - `website.propose_structure(business_profile)`
+  - `website.update_structure(site_structure)`
+  - `website.update_taxonomy(topic_tags)`
   - `website.generate_from_template(template_id, constraints)`
   - `website.apply_feedback(site_version_id, instructions)`
   - `website.run_checks(site_version_id)`
@@ -276,6 +311,7 @@ Enforce rules outside the model so the system remains safe, predictable, and com
 
 - Approval rules:
   - Always require explicit approval for send, post, publish, and launch ads by default
+  - MVP uses a simple proposal + approval log (state machine can be added later)
 - Budget enforcement:
   - monthly cap
   - per-campaign cap
@@ -285,12 +321,14 @@ Enforce rules outside the model so the system remains safe, predictable, and com
   - prevent deletion of published logo/showcase assets; require replacement
 - Site governance:
   - require automated checks to pass before staging promotion
+  - require explicit approval before committing site structure or taxonomy changes
 - Compliance constraints:
   - disallow actions likely to violate platform terms
   - restrict automation to assistive mode where necessary
 - Content constraints:
   - avoid repetitive spammy phrasing
   - require inclusion of key disclaimers or booking details (optional templates)
+  - respond with a fixed out-of-scope message when intent is unsupported
 
 ### Outputs
 
@@ -318,13 +356,14 @@ Enforce rules outside the model so the system remains safe, predictable, and com
 
 ### 4.7.1 Primary DB
 
-- MVP local: SQLite
-- Recommended: Postgres (local via Docker)
+- MVP local: Postgres (local via Docker to match staging)
+- SQLite: allowed only for tests or lightweight prototypes
 
 Stores:
 
 - Contacts, inquiries, message threads
 - Shoots, expenses, categories
+- Business profile, site structure, and topic taxonomy
 - Website pages, templates, site versions, deployments
 - Conversational instructions, agent runs, and test results
 - Social drafts, schedules, results snapshots
@@ -345,14 +384,14 @@ Strategy:
 - DB stores tags (AI + manual), roles (hero_main, logo, showcase, gallery, social) with published flags, ratings, focal points, usage history, and derived variants
 - DB stores site placements and slot assignments for hero, logo, gallery, and showcase sections
 
-### 4.7.3 Vector store (optional but recommended)
+### 4.7.3 Vector store (semantic memory)
 
 Purpose:
 
-- RAG retrieval for brand voice, FAQs, journal notes, past campaigns
-  Options:
-- pgvector inside Postgres
-- Qdrant
+- Semantic retrieval for business profile notes, site structure context, brand voice, FAQs, journal notes, past campaigns.
+- Vector store is derived from canonical DB records and can be rebuilt.
+- Implementation: pgvector inside Postgres.
+- Embeddings are built on write to keep memory fresh; reassess cost/perf as data grows.
 
 ------
 
@@ -402,10 +441,13 @@ Isolation:
 - Contact
 - Inquiry
 - Shoot
+- BusinessProfile
 - Asset (Photo)
 - AssetTag
+- TopicTag
 - AssetRole (with published state)
 - AssetVariant
+- SiteStructure
 - SiteTemplate
 - SiteVersion
 - SiteDeployment
@@ -454,23 +496,32 @@ Isolation:
 ### 6.3 Journal entry to content recommendations
 
 1. Brian logs a journal entry with selected photos
-2. System indexes notes and assets (optional vector embedding)
+2. System indexes notes and assets with embeddings on write
 3. Weekly agent job proposes:
    - website refresh actions
    - social post candidates
    - blog topic candidates
 4. Brian approves and agent executes
 
-### 6.4 Image upload to site generation
+### 6.4 Site intake to taxonomy approval
+
+1. Brian selects "Build a new website" and provides business details
+2. System captures services, delivery method, pricing model, and subject focus
+3. System proposes site structure and topic taxonomy in structured + JSON form (see `docs/Site Intake Schema.md`)
+4. Brian requests changes or approves the proposal
+5. Approved structure and taxonomy are stored for tagging and generation
+
+### 6.5 Image upload to site generation
 
 1. Brian uploads images to the library
 2. AI tagging pipeline generates tags + confidence scores
 3. Brian reviews, edits tags, assigns roles (hero_main, logo, showcase, gallery)
 4. System generates a site draft from a selected template
-5. Brian provides feedback via conversation; AI may ask clarifying questions
-6. Agent executes changes, runs automated checks, and records results
-7. Brian deploys to staging and reviews
-8. Brian promotes to business domain when ready
+5. Brian assigns specific images to pages as needed; system fills gaps using star ratings
+6. Brian provides feedback via conversation; AI may ask clarifying questions
+7. Agent executes changes, runs automated checks, and records results
+8. Brian deploys to staging and reviews
+9. Brian promotes to business domain when ready
 
 ------
 
@@ -478,7 +529,8 @@ Isolation:
 
 ### 7.1 AI workloads (current)
 
-- Image auto-tagging (OpenAI vision) for service taxonomy
+- Site intake assistant for business description, structure, and taxonomy proposal
+- Image auto-tagging (OpenAI vision) for topic taxonomy
 - Conversational site builder (planned) for template selection + content updates
 - Draft generation (planned) for captions, posts, and blog outlines
 
@@ -487,7 +539,7 @@ Isolation:
 - Input: selected asset(s) from the photo library
 - Pre-processing: generate a low-bandwidth derivative (JPEG, max width 512px)
 - Model call: OpenAI Responses API with strict JSON schema output
-- Output: service tags + confidence + suggested tags
+- Output: topic tags + confidence + suggested tags
 - Storage:
   - Tag assignments stored as `source=auto` with confidence
   - Suggested tags queued as taxonomy candidates (pending approval)
@@ -502,11 +554,12 @@ Isolation:
 
 - Approved taxonomy powers auto-placement rules on the site
 - Suggested tags require explicit approval before entering the taxonomy
+- Auto-inferred hierarchical tags may be created with an approval/revert option
 - Role assignment rules enforced (hero_main uniqueness, published constraints)
 
 ### 7.5 Model and prompt versioning
 
-- OpenAI SDK pinned in `apps/api/requirements.txt`
+- OpenAI SDK pinned in `apps/api/requirements.txt` (see `docs/OpenAI API Spec Notes.md`)
 - Model name, prompt version, schema version stored in API settings
 - Changes require smoke tests on a single image before batch runs
 
@@ -517,18 +570,53 @@ Isolation:
 - Log response/parse errors and store failure reasons in job records
 - Keep CA bundle configuration for environments with SSL inspection
 
+### 7.7 Agentic execution model (agents + memory + tools)
+
+This system uses AI agents as orchestrators that plan tasks, retrieve context, and execute
+schema-validated tools under policy control. The agent does not directly mutate external
+systems; it must call tools through the Tool Gateway so actions are logged and governed.
+
+Core loop:
+
+1. **Intent + context**: user intent arrives (UI or API), and the agent retrieves memory
+   (business profile, site structure, topic taxonomy, prior runs) from the DB and pgvector.
+2. **Plan**: agent produces a stepwise plan with required tools and inputs.
+3. **Tool selection**: each step calls a tool with strict input/output schemas.
+4. **Policy enforcement**: policy engine returns allow/deny/require-approval before execution.
+5. **Execution + logging**: tool calls are executed, outputs recorded, and run/step logs updated.
+6. **Approval gating**: high-impact actions (deploy/publish/send/post) pause for explicit approval.
+7. **Outcome + memory update**: outcomes are stored, and relevant memory entries are updated.
+
+How it satisfies requirements:
+- **Site intake**: agents store the business profile, propose structure/taxonomy, and persist
+  approved versions. Semantic memory enables fuzzy retrieval across profile and structure.
+- **Tagging**: vision tagging is invoked as a tool; suggestions are queued for approval.
+- **Generation + deploy**: agents request generation, run checks, and only deploy when checks pass.
+
+Safety + auditability:
+- Every run has a stable ID with steps and tool calls persisted.
+- Approval requests and decisions are stored and linked to tool calls.
+- Checks are recorded as test runs; deploys record rollback targets.
+
+Implementation anchors (current):
+- Run logs: `AgentRun`, `AgentStep`, `ToolCallLog`.
+- Tool gateway: schema-validated tools with policy checks.
+- Memory: canonical SQL records + embeddings in pgvector.
+- Checks and deploys: `SiteTestRun` + `SiteDeployment`.
+
 ------
 
 ## 8. Security and reliability
 
 ### Authentication and secrets
 
-- Local auth (single-user initially)
+- Local auth can run in single-user mode; hosted requires multi-tenant auth and tenant isolation.
 - Admin UI protected by basic auth on `/admin`
 - Encryption for tokens at rest
 - Never store raw credentials in logs
 - API keys stored via environment variables (local `.env`, hosted secrets)
 - OpenAI API key uses explicit env config with versioned model/prompt/schema settings
+- CI/CD uses Workload Identity Federation to avoid storing GCP service account keys in GitHub.
 
 ### Spam protection
 
@@ -564,7 +652,7 @@ Isolation:
 
 - Primary workflow runs on a laptop.
 - UI and API run in separate terminals (`make ui`, `make api`).
-- Supporting services (Postgres, Redis, Qdrant) run via Docker Compose (`make infra-up`).
+- Supporting services (Postgres with pgvector, Redis) run via Docker Compose (`make infra-up`).
 - UI env: `apps/ui/.env.local`
 - API env: repo root `.env` (loaded via `BHP_` prefix).
 - Photo storage lives in `storage/library/originals` and `storage/library/derived`.
@@ -579,9 +667,9 @@ flowchart LR
   API --> OpenAI["OpenAI API"]
 ```
 
-### 9.2 Current hosted wiring (staging)
+### 9.2 Current hosted wiring (staging / early POC)
 
-The current hosted setup is a staging deployment used to validate the wiring between UI, API, DB, and DNS.
+The current hosted setup is a staging deployment used to validate the wiring between UI, API, DB, and DNS for early POC/dev.
 
 ```mermaid
 flowchart LR
@@ -596,7 +684,7 @@ flowchart LR
   DevSeed["Dev seed script"] --> Render
 ```
 
-### 9.3 Hosted configuration details (current)
+### 9.3 Hosted configuration details (current, early POC)
 
 - Git hosting: GitHub repo `brianhopkins88/bhp-console` with default branch `main`.
 - UI hosting: Vercel
@@ -626,11 +714,28 @@ flowchart LR
   - Database: `bhp_console_db`
   - External URL: set as a secret env var in Render (do not commit credentials)
   - Expiration warning: free tier expires on January 23, 2026 unless upgraded.
+  - Scaling: move to a paid tier as data volume and job load increase.
 - Storage: API writes to the service filesystem.
   - For durable staging storage, attach a Render disk or move to object storage (S3/MinIO).
 - DNS: GoDaddy manages the root domain; staging uses a CNAME to Vercel.
 
-### 9.4 Sync, migrations, and seed workflow
+### 9.4 Sync, migrations, and CI/CD workflow
+
+Near-term (early POC): stay on Vercel + Render for lowest management overhead and cost.
+
+Target future state (scaling): move API + DB + storage to GCP, with two UI options:
+- Option A: keep UI on Vercel and point to GCP API.
+- Option B: move UI to GCP (Cloud Run for SSR or Cloud Storage + CDN for static).
+
+Planned hosted CI/CD (GCP): GitHub Actions is the chosen pipeline runner.
+- On push to `main`, build artifacts (API container, UI container or static export).
+- Run API migrations as a dedicated step or job before deploy.
+- Deploy API to Cloud Run and UI to Cloud Run (SSR) or Cloud Storage + CDN (static).
+- Record deploy metadata for staging/prod promotion and rollback.
+- GitHub Actions authenticates to GCP via Workload Identity Federation (no long-lived service account keys).
+- Container images are stored in a private Artifact Registry repository.
+
+Current hosted wiring (Render/Vercel):
 
 - Code sync:
   - Push to GitHub -> Vercel/Render auto-deploy from `main`.
@@ -654,9 +759,8 @@ Containers:
 - ui (Next.js)
 - api (FastAPI)
 - worker (jobs and agent sessions)
-- db (Postgres)
+- db (Postgres with pgvector extension)
 - redis (if using Celery or RQ)
-- qdrant (optional)
 - minio (optional)
 - playwright-runner (optional)
 
@@ -668,18 +772,52 @@ Containers:
 
 - UI: Next.js
 - API: FastAPI
-- DB: SQLite to start, then Postgres
+- DB: Postgres for authoritative records in dev/staging (SQLite only for tests)
 - Jobs: APScheduler, then Celery or RQ with Redis
 - Storage: filesystem, optional MinIO
-- Vector: start without, add pgvector or Qdrant when journal grows
+- Vector: pgvector for semantic memory (DB remains the system of record)
 - Agents: OpenAI-first with structured tool calling and schema validation
 
 ------
 
-## 11. Roadmap mapping
+## 11. Migration plan (Epic 0)
+
+Detailed backlog: `docs/Epic 0 Migration Backlog.md`.
+
+### Phase 1: Architecture assessment
+
+- Inventory current modules and map them to target boundaries (domain, agents, tools, policy, jobs, UI).
+- Identify missing components for agent runtime, tool gateway, and policy enforcement.
+- Document gaps and migration order with dependencies and risks.
+- Validate migration steps against the current hosted setup (Render API + Postgres, Vercel UI).
+
+### Phase 2: Structural refactor
+
+- Establish package boundaries for agent runtime, tools, policy, and jobs.
+- Move existing functionality behind schemas and tool interfaces.
+- Add run logging and correlation IDs for agent actions and tool calls.
+
+### Phase 3: Memory + safety foundation
+
+- Add durable storage for business profile, site structure, and topic taxonomy.
+- Add retrieval patterns for agents to use this context consistently.
+- Enforce approval gates for structure/taxonomy changes and out-of-scope intent responses.
+- Provision pgvector in dev and staging and wire retrieval to agents.
+
+### Phase 4: Operational readiness
+
+- Wire automated checks into site change requests and staging deploys.
+- Capture deployment metadata and rollback targets.
+- Validate staged deploys through the agent-run pipeline.
+
+------
+
+## 12. Roadmap mapping
 
 ### MVP
 
+- Architecture migration for agent runtime, tool gateway, and memory
+- Site intake conversation + site structure and taxonomy approval
 - AI image classification pipeline
 - Photo import, tagging, role management, derivative generation
 - Role-driven website generation and iterative AI feedback
@@ -702,7 +840,7 @@ Containers:
 - Assistive group posting with rules
 - Automated anomaly alerts for spend and performance
 
-## 12. Appendix: Suggested repo structure
+## 13. Appendix: Suggested repo structure
 
 ```
 bhp-console/
@@ -726,3 +864,52 @@ bhp-console/
   docs/
     architecture.md
 ```
+
+## 14. Appendix: Architecture decisions (Epic 0 session)
+
+### D1: Vector store choice (pgvector)
+
+- Decision: Use pgvector in Postgres as the semantic memory store (dev uses `pgvector/pgvector:pg16`, staging uses `CREATE EXTENSION vector` on Render Postgres).
+- Tradeoffs:
+  - Pros: single database, fewer services, easy backup/restore, consistent with canonical records.
+  - Cons: lower vector search performance at scale vs specialized vector DBs; index tuning required.
+- Scaling impact:
+  - Good for MVP and early growth.
+  - If vector workload grows significantly, consider moving embeddings to a dedicated vector service (Qdrant or similar) and keep Postgres as the system of record.
+
+### D2: Semantic memory scope for site intake
+
+- Decision: Embed business profile, site structure, and topic taxonomy content on write and store in `memory_embeddings`.
+- Tradeoffs:
+  - Pros: agents can perform fuzzy retrieval across profile/structure/taxonomy without bespoke SQL rules.
+  - Cons: duplicated data, embedding cost/latency on writes, and potential noise from embedding full JSON payloads.
+- Scaling impact:
+  - Storage grows with each approved structure/taxonomy version; consider summarization or pruning old versions if size or cost becomes an issue.
+  - If embeddings become too noisy, narrow to summaries or page descriptions only.
+
+### D3: Embedding model and dimensions
+
+- Decision: Use OpenAI `text-embedding-3-small` with 1536 dimensions.
+- Tradeoffs:
+  - Pros: cost-effective and fast; stable dimensionality for pgvector schema.
+  - Cons: lower recall vs larger embedding models in some cases.
+- Scaling impact:
+  - Changing embedding model/dimensions requires rebuilding embeddings and reindexing.
+
+### D4: Agent run tracking and approval log (MVP)
+
+- Decision: Persist AgentRun, AgentStep, ToolCallLog, and Approval records for auditability and safety.
+- Tradeoffs:
+  - Pros: traceable runs and tool usage; explicit approval history.
+  - Cons: extra write volume and schema complexity.
+- Scaling impact:
+  - Log growth requires retention policies, indexes, or archiving as run volume increases.
+
+### D5: Modular monolith boundaries
+
+- Decision: Keep a modular monolith with explicit package boundaries for domain, agents, tools, policy, jobs, and connectors.
+- Tradeoffs:
+  - Pros: clear interfaces and safer refactors without service sprawl.
+  - Cons: some overhead in maintaining boundaries and cross-package imports.
+- Scaling impact:
+  - Enables later service extraction with minimal rework.

@@ -8,6 +8,7 @@ Local-first web app to automate website, marketing, CRM, and finances for Brian 
 - packages/*: shared modules (agents, tools, connectors, policy)
 - infra: docker compose + local services
 - storage: local photo library + derived assets
+- docs/WORKLOG.md: Epic 0 module inventory + architecture overview (keep updated)
 
 ## Local workflow
 Start everything:
@@ -35,6 +36,7 @@ Session scripts:
 
 Session notes:
 - update `docs/WORKLOG.md` at the end of each session
+- update the Epic 0 module inventory section in `docs/WORKLOG.md` when code modules change
 
 ## Hosted staging (current)
 - UI: Vercel (root: `apps/ui`, framework: Next.js)

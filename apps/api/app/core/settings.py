@@ -23,8 +23,12 @@ class Settings(BaseSettings):
     openai_tagging_prompt_version: str = "2025-02-05"
     openai_tagging_schema_version: str = "v1"
     openai_tagging_image_max_width: int = 512
+    openai_embedding_model: str = "text-embedding-3-small"
+    openai_embedding_dimensions: int = 1536
     openai_ca_bundle: str | None = None
     openai_token_budget: int = 1_000_000
+    api_basic_auth_user: str | None = None
+    api_basic_auth_pass: str | None = None
 
     model_config = SettingsConfigDict(
         env_prefix="BHP_",

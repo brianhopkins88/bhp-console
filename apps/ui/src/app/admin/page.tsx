@@ -17,6 +17,11 @@ export default function AdminPage() {
             href: "/admin/photos",
           },
           {
+            title: "Site Intake",
+            description: "Capture business details and approve site structure.",
+            href: "/admin/site-intake",
+          },
+          {
             title: "Gallery Assignments",
             description: "Review AI picks for services and galleries.",
             href: "/admin/galleries",

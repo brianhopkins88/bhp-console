@@ -9,6 +9,12 @@ infra-down:
 api:
 	. .venv/bin/activate && cd apps/api && uvicorn app.main:app --reload --port 8001
 
+test-api:
+	. .venv/bin/activate && cd apps/api && pytest
+
+migrate:
+	. .venv/bin/activate && python -m alembic upgrade head
+
 ui:
 	cd apps/ui && npm run dev
 
@@ -44,3 +50,15 @@ seed-staging:
 	if [ -n "$$BHP_SEED_LIMIT" ]; then ARGS+=(--limit "$$BHP_SEED_LIMIT"); fi; \
 	if [ "$${BHP_SEED_NO_DERIVATIVES:-0}" = "1" ]; then ARGS+=(--no-derivatives); fi; \
 	$$PYTHON_BIN apps/api/scripts/seed_staging_uploads.py "$${ARGS[@]}"
+
+smoke-e0-03:
+	API_BASE="$${API_BASE:-http://localhost:8001/api/v1}" ./scripts/smoke_e0_03.sh
+
+smoke-e0-04:
+	API_BASE="$${API_BASE:-http://localhost:8001/api/v1}" ./scripts/smoke_e0_04.sh
+
+smoke-e0-05:
+	API_BASE="$${API_BASE:-http://localhost:8001/api/v1}" ./scripts/smoke_e0_05.sh
+
+smoke-e0-06-07:
+	API_BASE="$${API_BASE:-http://localhost:8001/api/v1}" ./scripts/smoke_e0_06_07.sh

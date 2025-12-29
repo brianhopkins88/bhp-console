@@ -30,6 +30,11 @@ type TagTaxonomy = {
   approved_at?: string | null;
 };
 
+type TopicTag = {
+  id: string;
+  label: string;
+};
+
 type AutoTagJob = {
   asset_id: string;
   status: string;
@@ -133,6 +138,7 @@ export default function AdminPhotosPage() {
   );
   const [uploadProgress, setUploadProgress] = useState<Record<string, number>>({});
   const [pendingTags, setPendingTags] = useState<TagTaxonomy[]>([]);
+  const [topicTags, setTopicTags] = useState<TopicTag[]>([]);
   const [tagInputs, setTagInputs] = useState<Record<string, string>>({});
   const [roleSelections, setRoleSelections] = useState<Record<string, string[]>>(
     {}
@@ -249,6 +255,22 @@ export default function AdminPhotosPage() {
     }
   };
 
+  const loadTopicTags = async () => {
+    try {
+      const response = await fetch(`${apiBaseUrl}/api/v1/site/taxonomy`);
+      if (!response.ok) {
+        return;
+      }
+      const data = (await response.json()) as {
+        taxonomy_data?: { tags?: TopicTag[] };
+      };
+      const tags = data?.taxonomy_data?.tags ?? [];
+      setTopicTags(tags);
+    } catch {
+      // Ignore topic taxonomy load errors.
+    }
+  };
+
   const loadAutoTagJobs = async (assetIds: string[]) => {
     if (!assetIds.length) return;
     const params = new URLSearchParams();
@@ -288,6 +310,10 @@ export default function AdminPhotosPage() {
 
   useEffect(() => {
     void loadPendingTags();
+  }, [apiBaseUrl]);
+
+  useEffect(() => {
+    void loadTopicTags();
   }, [apiBaseUrl]);
 
   useEffect(() => {
@@ -798,6 +824,20 @@ export default function AdminPhotosPage() {
       return;
     }
     await loadAssets();
+  };
+
+  const handleAddTopicTag = (assetId: string, tagId: string) => {
+    setTagInputs((prev) => {
+      const existing = prev[assetId] ?? "";
+      const tags = existing
+        .split(",")
+        .map((item) => item.trim())
+        .filter(Boolean);
+      if (!tags.includes(tagId)) {
+        tags.push(tagId);
+      }
+      return { ...prev, [assetId]: tags.join(", ") };
+    });
   };
 
   const handleBulkTags = async () => {
@@ -1321,6 +1361,29 @@ export default function AdminPhotosPage() {
                 ))
               ) : (
                 <p className="text-xs text-zinc-400">No pending tags</p>
+              )}
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-zinc-200 bg-white p-4">
+            <div className="flex items-center justify-between text-xs font-semibold uppercase tracking-wide text-zinc-500">
+              Topic tags
+              <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] text-zinc-500">
+                {topicTags.length}
+              </span>
+            </div>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {topicTags.length ? (
+                topicTags.map((tag) => (
+                  <span
+                    key={tag.id}
+                    className="rounded-full border border-zinc-200 bg-zinc-50 px-3 py-1 text-[11px] text-zinc-500"
+                  >
+                    {tag.label}
+                  </span>
+                ))
+              ) : (
+                <p className="text-xs text-zinc-400">No topic tags yet</p>
               )}
             </div>
           </div>
@@ -1938,6 +2001,22 @@ export default function AdminPhotosPage() {
                                       Add
                                     </button>
                                   </div>
+                                  {topicTags.length ? (
+                                    <div className="flex flex-wrap gap-2">
+                                      {topicTags.map((tag) => (
+                                        <button
+                                          key={`${asset.id}-topic-${tag.id}`}
+                                          type="button"
+                                          onClick={() =>
+                                            handleAddTopicTag(asset.id, tag.id)
+                                          }
+                                          className="rounded-full border border-zinc-200 px-3 py-1 text-[11px] text-zinc-600 transition hover:border-zinc-300"
+                                        >
+                                          {tag.label}
+                                        </button>
+                                      ))}
+                                    </div>
+                                  ) : null}
                                 </div>
 
                                 <div className="space-y-2">

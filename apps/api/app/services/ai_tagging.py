@@ -282,8 +282,10 @@ def _parse_tagging_response(payload: dict, allowed_tags: Iterable[str]) -> tuple
 
 
 def _normalize_tag(tag: str) -> str:
-    cleaned = "".join(ch if ch.isalnum() or ch.isspace() else " " for ch in tag.lower())
-    return "_".join(cleaned.split()).strip("_")
+    cleaned = "".join(
+        ch if ch.isalnum() or ch in {".", "-", " "} else " " for ch in tag.lower()
+    )
+    return "-".join(cleaned.split()).strip("-")
 
 
 def _ensure_base_taxonomy(db) -> None:
@@ -306,6 +308,7 @@ def _list_approved_tags(db) -> list[str]:
 
 
 def _upsert_taxonomy(db, tag: str, status: str) -> None:
+    _ensure_parent_taxonomy(db, tag, status=status)
     existing = db.execute(
         select(TagTaxonomy).where(TagTaxonomy.tag == tag)
     ).scalar_one_or_none()
@@ -317,6 +320,29 @@ def _upsert_taxonomy(db, tag: str, status: str) -> None:
                 existing.approved_at = now
     else:
         taxonomy = TagTaxonomy(tag=tag, status=status)
+        if status == "approved":
+            taxonomy.approved_at = now
+        db.add(taxonomy)
+
+
+def _ensure_parent_taxonomy(db, tag: str, status: str) -> None:
+    if "." not in tag:
+        return
+    parts = [part for part in tag.split(".") if part]
+    if len(parts) < 2:
+        return
+    now = datetime.now(timezone.utc)
+    for i in range(1, len(parts)):
+        parent = ".".join(parts[:i])
+        existing = db.execute(
+            select(TagTaxonomy).where(TagTaxonomy.tag == parent)
+        ).scalar_one_or_none()
+        if existing:
+            if status == "approved" and existing.status != "approved":
+                existing.status = "approved"
+                existing.approved_at = now
+            continue
+        taxonomy = TagTaxonomy(tag=parent, status=status)
         if status == "approved":
             taxonomy.approved_at = now
         db.add(taxonomy)
