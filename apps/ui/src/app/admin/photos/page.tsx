@@ -105,6 +105,8 @@ const PUBLISHABLE_ROLES = new Set<RoleKey>(["logo", "showcase", "hero_main"]);
 export default function AdminPhotosPage() {
   const apiBaseUrl =
     process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8001";
+  const apiFetch: typeof fetch = (input, init) =>
+    globalThis.fetch(input, { ...(init ?? {}), credentials: "include" });
 
   const ratioLabel = (width: number, height: number) => {
     const gcd = (a: number, b: number): number => (b ? gcd(b, a % b) : a);
@@ -225,7 +227,7 @@ export default function AdminPhotosPage() {
     try {
       setError(null);
       setLoading(true);
-      const response = await fetch(
+      const response = await apiFetch(
         `${apiBaseUrl}/api/v1/assets${buildAssetsQuery()}`
       );
       if (!response.ok) {
@@ -242,7 +244,7 @@ export default function AdminPhotosPage() {
 
   const loadPendingTags = async () => {
     try {
-      const response = await fetch(
+      const response = await apiFetch(
         `${apiBaseUrl}/api/v1/assets/taxonomy?status=pending`
       );
       if (!response.ok) {
@@ -257,7 +259,7 @@ export default function AdminPhotosPage() {
 
   const loadTopicTags = async () => {
     try {
-      const response = await fetch(`${apiBaseUrl}/api/v1/site/taxonomy`);
+      const response = await apiFetch(`${apiBaseUrl}/api/v1/site/taxonomy`);
       if (!response.ok) {
         return;
       }
@@ -276,7 +278,7 @@ export default function AdminPhotosPage() {
     const params = new URLSearchParams();
     assetIds.forEach((assetId) => params.append("asset_ids", assetId));
     try {
-      const response = await fetch(
+      const response = await apiFetch(
         `${apiBaseUrl}/api/v1/assets/auto-tag/status?${params.toString()}`
       );
       if (!response.ok) {
@@ -644,7 +646,7 @@ export default function AdminPhotosPage() {
       .filter(Boolean);
     if (!tags.length) return;
 
-    const response = await fetch(`${apiBaseUrl}/api/v1/assets/${assetId}/tags`, {
+    const response = await apiFetch(`${apiBaseUrl}/api/v1/assets/${assetId}/tags`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(tags.map((tag) => ({ tag, source: "manual" }))),
@@ -667,7 +669,7 @@ export default function AdminPhotosPage() {
     }
     const nextRoles = Array.from(current);
     setRoleSelections((prev) => ({ ...prev, [assetId]: nextRoles }));
-    const response = await fetch(`${apiBaseUrl}/api/v1/assets/${assetId}/roles`, {
+    const response = await apiFetch(`${apiBaseUrl}/api/v1/assets/${assetId}/roles`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(
@@ -690,7 +692,7 @@ export default function AdminPhotosPage() {
   const handleSetRating = async (assetId: string, rating: number) => {
     setActionError(null);
     setRatingInputs((prev) => ({ ...prev, [assetId]: rating }));
-    const response = await fetch(`${apiBaseUrl}/api/v1/assets/${assetId}/rating`, {
+    const response = await apiFetch(`${apiBaseUrl}/api/v1/assets/${assetId}/rating`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -709,7 +711,7 @@ export default function AdminPhotosPage() {
     setActionError(null);
     const nextStar = !(starInputs[assetId] ?? false);
     setStarInputs((prev) => ({ ...prev, [assetId]: nextStar }));
-    const response = await fetch(`${apiBaseUrl}/api/v1/assets/${assetId}/rating`, {
+    const response = await apiFetch(`${apiBaseUrl}/api/v1/assets/${assetId}/rating`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -727,7 +729,7 @@ export default function AdminPhotosPage() {
   const handleSaveFocal = async (assetId: string) => {
     setActionError(null);
     const focal = focalInputs[assetId];
-    const response = await fetch(`${apiBaseUrl}/api/v1/assets/${assetId}/focal-point`, {
+    const response = await apiFetch(`${apiBaseUrl}/api/v1/assets/${assetId}/focal-point`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -749,7 +751,7 @@ export default function AdminPhotosPage() {
     );
     if (!confirmed) return;
 
-    const response = await fetch(`${apiBaseUrl}/api/v1/assets/${assetId}`, {
+    const response = await apiFetch(`${apiBaseUrl}/api/v1/assets/${assetId}`, {
       method: "DELETE",
     });
     if (!response.ok) {
@@ -766,7 +768,7 @@ export default function AdminPhotosPage() {
     setActionError(null);
     const current = rolePublished[assetId]?.[role] ?? false;
     const next = !current;
-    const response = await fetch(
+    const response = await apiFetch(
       `${apiBaseUrl}/api/v1/assets/${assetId}/roles/${role}/publish`,
       {
         method: "PUT",
@@ -789,7 +791,7 @@ export default function AdminPhotosPage() {
     }
     const nextRoles = Array.from(new Set([...currentRoles, "hero_main"]));
     setRoleSelections((prev) => ({ ...prev, [assetId]: nextRoles }));
-    const response = await fetch(`${apiBaseUrl}/api/v1/assets/${assetId}/roles`, {
+    const response = await apiFetch(`${apiBaseUrl}/api/v1/assets/${assetId}/roles`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(
@@ -815,7 +817,7 @@ export default function AdminPhotosPage() {
     if (tag.source) {
       params.set("source", tag.source);
     }
-    const response = await fetch(
+    const response = await apiFetch(
       `${apiBaseUrl}/api/v1/assets/${assetId}/tags?${params.toString()}`,
       { method: "DELETE" }
     );
@@ -852,7 +854,7 @@ export default function AdminPhotosPage() {
     setActionError(null);
     try {
       for (const assetId of selectedAssets) {
-        const response = await fetch(`${apiBaseUrl}/api/v1/assets/${assetId}/tags`, {
+        const response = await apiFetch(`${apiBaseUrl}/api/v1/assets/${assetId}/tags`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(tags.map((tag) => ({ tag, source: "manual" }))),
@@ -878,7 +880,7 @@ export default function AdminPhotosPage() {
     let didQueue = false;
     try {
       for (const assetId of selectedAssets) {
-        const response = await fetch(`${apiBaseUrl}/api/v1/assets/${assetId}/auto-tag`, {
+        const response = await apiFetch(`${apiBaseUrl}/api/v1/assets/${assetId}/auto-tag`, {
           method: "POST",
         });
         if (!response.ok) {
@@ -927,7 +929,7 @@ export default function AdminPhotosPage() {
 
   const handleApproveTag = async (tag: string) => {
     setActionError(null);
-    const response = await fetch(`${apiBaseUrl}/api/v1/assets/taxonomy/${tag}`, {
+    const response = await apiFetch(`${apiBaseUrl}/api/v1/assets/taxonomy/${tag}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ status: "approved" }),
@@ -948,7 +950,7 @@ export default function AdminPhotosPage() {
     setActionError(null);
     try {
       for (const assetId of selectedAssets) {
-        const response = await fetch(`${apiBaseUrl}/api/v1/assets/${assetId}/roles`, {
+        const response = await apiFetch(`${apiBaseUrl}/api/v1/assets/${assetId}/roles`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(roles.map((role) => ({ role }))),
@@ -980,7 +982,7 @@ export default function AdminPhotosPage() {
         if (currentPublished === isPublished) {
           continue;
         }
-        const response = await fetch(
+        const response = await apiFetch(
           `${apiBaseUrl}/api/v1/assets/${assetId}/roles/${role}/publish`,
           {
             method: "PUT",
@@ -1006,7 +1008,7 @@ export default function AdminPhotosPage() {
     setActionError(null);
     try {
       for (const assetId of selectedAssets) {
-        const response = await fetch(`${apiBaseUrl}/api/v1/assets/${assetId}/rating`, {
+        const response = await apiFetch(`${apiBaseUrl}/api/v1/assets/${assetId}/rating`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -1038,7 +1040,7 @@ export default function AdminPhotosPage() {
     setActionError(null);
     try {
       for (const assetId of selectedAssets) {
-        const response = await fetch(`${apiBaseUrl}/api/v1/assets/${assetId}`, {
+        const response = await apiFetch(`${apiBaseUrl}/api/v1/assets/${assetId}`, {
           method: "DELETE",
         });
         if (!response.ok) {

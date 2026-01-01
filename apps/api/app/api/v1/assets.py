@@ -21,7 +21,7 @@ from sqlalchemy.orm import Session
 
 from app.core.settings import settings
 from app.db.session import get_db
-from app.models.assets import (
+from packages.domain.models.assets import (
     Asset,
     AssetAutoTagJob,
     AssetRole,
@@ -29,7 +29,7 @@ from app.models.assets import (
     AssetVariant,
     TagTaxonomy,
 )
-from app.schemas.assets import (
+from packages.domain.schemas.assets import (
     AssetDerivativeRequest,
     AssetAutoTagJobOut,
     AutoTagResponse,

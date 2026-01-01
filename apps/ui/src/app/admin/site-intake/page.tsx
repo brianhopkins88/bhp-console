@@ -77,6 +77,41 @@ type TopicTaxonomyRecord = {
   approved_at: string | null;
 };
 
+type TopicTaxonomyChange = {
+  id: number;
+  taxonomy_id: number | null;
+  status: string;
+  change_type: string;
+  taxonomy_data: TopicTaxonomy | null;
+  created_by: string;
+  source_run_id: string | null;
+  created_at: string;
+};
+
+type PageConfigVersion = {
+  id: number;
+  parent_version_id: number | null;
+  site_structure_version_id: number | null;
+  page_id: string;
+  config_data: Record<string, unknown> | unknown[] | null;
+  selection_rules: Record<string, unknown> | unknown[] | null;
+  taxonomy_snapshot_id: number | null;
+  created_by: string;
+  source_run_id: string | null;
+  commit_classification: string;
+  status: string;
+  created_at: string;
+};
+
+type ApprovalRecord = {
+  id: number;
+  action: string;
+  status: string;
+  requester: string;
+  created_at: string;
+  decided_at: string | null;
+};
+
 type SiteIntakeState = {
   business_profile: BusinessProfileRecord | null;
   site_structure: SiteStructureRecord | null;
@@ -133,6 +168,8 @@ export default function SiteIntakePage() {
   const router = useRouter();
   const apiBaseUrl =
     process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8001";
+  const apiFetch: typeof fetch = (input, init) =>
+    globalThis.fetch(input, { ...(init ?? {}), credentials: "include" });
 
   const [freeformInput, setFreeformInput] = useState("");
   const [guardrailMessage, setGuardrailMessage] = useState<string | null>(null);
@@ -172,7 +209,21 @@ export default function SiteIntakePage() {
   const [stateLoading, setStateLoading] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [showHistoryPanel, setShowHistoryPanel] = useState(false);
+  const [showTaxonomyLog, setShowTaxonomyLog] = useState(false);
+  const [showPageConfigPanel, setShowPageConfigPanel] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
+  const [taxonomyLog, setTaxonomyLog] = useState<TopicTaxonomyChange[]>([]);
+  const [taxonomyLogLoading, setTaxonomyLogLoading] = useState(false);
+  const [taxonomyRestoreId, setTaxonomyRestoreId] = useState<number | null>(null);
+  const [pageConfigPageId, setPageConfigPageId] = useState<string>("");
+  const [pageConfigStatus, setPageConfigStatus] = useState<"draft" | "approved">(
+    "draft"
+  );
+  const [pageConfigData, setPageConfigData] = useState("{\n\n}");
+  const [pageConfigRules, setPageConfigRules] = useState("{\n\n}");
+  const [pageConfigHistory, setPageConfigHistory] = useState<PageConfigVersion[]>([]);
+  const [pageConfigLoading, setPageConfigLoading] = useState(false);
+  const [pageConfigHistoryLoading, setPageConfigHistoryLoading] = useState(false);
 
   const [proposing, setProposing] = useState(false);
   const [savingProfile, setSavingProfile] = useState(false);
@@ -397,7 +448,7 @@ export default function SiteIntakePage() {
     setActionError(null);
     setActionMessage(null);
     try {
-      const response = await fetch(`${apiBaseUrl}/api/v1/site/intake/proposal`, {
+      const response = await apiFetch(`${apiBaseUrl}/api/v1/site/intake/proposal`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -448,7 +499,7 @@ export default function SiteIntakePage() {
     setActionError(null);
     setActionMessage(null);
     try {
-      const response = await fetch(`${apiBaseUrl}/api/v1/site/intake/proposal`, {
+      const response = await apiFetch(`${apiBaseUrl}/api/v1/site/intake/proposal`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -480,6 +531,42 @@ export default function SiteIntakePage() {
     }
   };
 
+  const requestApproval = async (
+    action: string,
+    proposal: Record<string, unknown>
+  ): Promise<number> => {
+    const createResponse = await apiFetch(`${apiBaseUrl}/api/v1/approvals`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action,
+        proposal,
+        requester: "admin-ui",
+      }),
+    });
+    if (!createResponse.ok) {
+      const payload = await createResponse.json().catch(() => ({}));
+      throw new Error(payload.detail ?? `HTTP ${createResponse.status}`);
+    }
+    const approval = (await createResponse.json()) as ApprovalRecord;
+    const decisionResponse = await apiFetch(
+      `${apiBaseUrl}/api/v1/approvals/${approval.id}/decision`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          status: "approved",
+          decided_by: "admin-ui",
+        }),
+      }
+    );
+    if (!decisionResponse.ok) {
+      const payload = await decisionResponse.json().catch(() => ({}));
+      throw new Error(payload.detail ?? `HTTP ${decisionResponse.status}`);
+    }
+    return approval.id;
+  };
+
   const saveBusinessProfile = async ({
     status,
     profile,
@@ -492,16 +579,31 @@ export default function SiteIntakePage() {
     setSavingProfile(true);
     setActionError(null);
     try {
-      const response = await fetch(`${apiBaseUrl}/api/v1/site/business-profile`, {
+      const commitClassification =
+        status === "approved" ? "approval_required" : "safe_auto_commit";
+      const proposal = {
+        name: null,
+        description: profile.notes ?? null,
+        profile_data: profile,
+        status,
+        force_new: forceNew ?? false,
+        commit_classification: commitClassification,
+      };
+      let approvalId: number | null = null;
+      if (commitClassification !== "safe_auto_commit") {
+        approvalId = await requestApproval(
+          "api.site.business_profile.create",
+          proposal
+        );
+      }
+      const url = new URL(`${apiBaseUrl}/api/v1/site/business-profile`);
+      if (approvalId) {
+        url.searchParams.set("approval_id", `${approvalId}`);
+      }
+      const response = await apiFetch(url.toString(), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: null,
-          description: profile.notes ?? null,
-          profile_data: profile,
-          status,
-          force_new: forceNew ?? false,
-        }),
+        body: JSON.stringify(proposal),
       });
       if (!response.ok) {
         const payload = await response.json().catch(() => ({}));
@@ -544,7 +646,7 @@ export default function SiteIntakePage() {
     setSavingTaxonomy(true);
     setActionError(null);
     try {
-      const response = await fetch(`${apiBaseUrl}/api/v1/site/taxonomy`, {
+      const response = await apiFetch(`${apiBaseUrl}/api/v1/site/taxonomy`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -594,14 +696,29 @@ export default function SiteIntakePage() {
     setSavingStructure(true);
     setActionError(null);
     try {
-      const response = await fetch(`${apiBaseUrl}/api/v1/site/structure`, {
+      const commitClassification =
+        status === "approved" ? "approval_required" : "safe_auto_commit";
+      const proposal = {
+        status,
+        structure_data: structure,
+        force_new: forceNew ?? false,
+        commit_classification: commitClassification,
+      };
+      let approvalId: number | null = null;
+      if (commitClassification !== "safe_auto_commit") {
+        approvalId = await requestApproval(
+          "api.site.structure.create",
+          proposal
+        );
+      }
+      const url = new URL(`${apiBaseUrl}/api/v1/site/structure`);
+      if (approvalId) {
+        url.searchParams.set("approval_id", `${approvalId}`);
+      }
+      const response = await apiFetch(url.toString(), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          status,
-          structure_data: structure,
-          force_new: forceNew ?? false,
-        }),
+        body: JSON.stringify(proposal),
       });
       if (!response.ok) {
         const payload = await response.json().catch(() => ({}));
@@ -636,7 +753,7 @@ export default function SiteIntakePage() {
     setStateLoading(true);
     setActionError(null);
     try {
-      const response = await fetch(`${apiBaseUrl}/api/v1/site/intake/state`);
+      const response = await apiFetch(`${apiBaseUrl}/api/v1/site/intake/state`);
       if (!response.ok) {
         const payload = await response.json().catch(() => ({}));
         throw new Error(payload.detail ?? `HTTP ${response.status}`);
@@ -654,6 +771,9 @@ export default function SiteIntakePage() {
   const handleReloadSaved = async () => {
     await loadIntakeState();
     setShowHistoryPanel(true);
+    setShowTaxonomyLog(false);
+    setShowPageConfigPanel(false);
+    setShowSettingsPanel(false);
     setMenuOpen(false);
     setActionMessage("Loaded saved versions. Pick one to continue.");
   };
@@ -805,6 +925,192 @@ export default function SiteIntakePage() {
     await loadIntakeState();
   };
 
+  const loadTaxonomyLog = async () => {
+    setTaxonomyLogLoading(true);
+    setActionError(null);
+    try {
+      const response = await apiFetch(
+        `${apiBaseUrl}/api/v1/site/taxonomy/history?limit=40`
+      );
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        throw new Error(payload.detail ?? `HTTP ${response.status}`);
+      }
+      const data = (await response.json()) as TopicTaxonomyChange[];
+      setTaxonomyLog(data);
+    } catch (err) {
+      setActionError((err as Error).message);
+    } finally {
+      setTaxonomyLogLoading(false);
+    }
+  };
+
+  const restoreTaxonomyChange = async (
+    change: TopicTaxonomyChange,
+    status: "draft" | "approved"
+  ) => {
+    if (!change.taxonomy_data) return;
+    setTaxonomyRestoreId(change.id);
+    setActionError(null);
+    try {
+      const response = await apiFetch(`${apiBaseUrl}/api/v1/site/taxonomy/restore`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          change_id: change.id,
+          status,
+          force_new: true,
+        }),
+      });
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        throw new Error(payload.detail ?? `HTTP ${response.status}`);
+      }
+      const data = (await response.json()) as TopicTaxonomyRecord;
+      const restored = change.taxonomy_data;
+      setTaxonomyDraft(restored);
+      lastSavedTaxonomyRef.current = JSON.stringify(restored);
+      setIntakeState((prev) =>
+        prev
+          ? {
+              ...prev,
+              topic_taxonomy: data,
+              topic_taxonomy_history: prev.topic_taxonomy_history,
+            }
+          : {
+              business_profile: null,
+              site_structure: null,
+              topic_taxonomy: data,
+              business_profile_history: [],
+              site_structure_history: [],
+              topic_taxonomy_history: [],
+            }
+      );
+      setActionMessage("Taxonomy restored. Review and approve if needed.");
+      setActiveStep(status === "approved" ? "review" : "taxonomy");
+      setShowTaxonomyLog(false);
+    } catch (err) {
+      setActionError((err as Error).message);
+    } finally {
+      setTaxonomyRestoreId(null);
+    }
+  };
+
+  const parseOptionalJson = (value: string): Record<string, unknown> | unknown[] | null => {
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    return JSON.parse(trimmed) as Record<string, unknown> | unknown[];
+  };
+
+  const formatJson = (value: Record<string, unknown> | unknown[] | null) => {
+    if (!value) return "{\n\n}";
+    try {
+      return `${JSON.stringify(value, null, 2)}\n`;
+    } catch {
+      return "{\n\n}";
+    }
+  };
+
+  const loadPageConfigHistory = async (pageId: string) => {
+    if (!pageId) return;
+    setPageConfigHistoryLoading(true);
+    setActionError(null);
+    try {
+      const params = new URLSearchParams();
+      params.set("page_id", pageId);
+      if (intakeState?.site_structure?.id) {
+        params.set("site_structure_version_id", `${intakeState.site_structure.id}`);
+      }
+      params.set("limit", "10");
+      const response = await apiFetch(
+        `${apiBaseUrl}/api/v1/site/page-config/history?${params.toString()}`
+      );
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        throw new Error(payload.detail ?? `HTTP ${response.status}`);
+      }
+      const data = (await response.json()) as PageConfigVersion[];
+      setPageConfigHistory(data);
+    } catch (err) {
+      setActionError((err as Error).message);
+    } finally {
+      setPageConfigHistoryLoading(false);
+    }
+  };
+
+  const savePageConfigVersion = async () => {
+    if (!pageConfigPageId) {
+      setActionError("Select a page before saving.");
+      return;
+    }
+    setPageConfigLoading(true);
+    setActionError(null);
+    try {
+      const configData = parseOptionalJson(pageConfigData);
+      const selectionRules = parseOptionalJson(pageConfigRules);
+      const commitClassification =
+        pageConfigStatus === "approved" ? "approval_required" : "safe_auto_commit";
+      const proposal = {
+        page_id: pageConfigPageId,
+        site_structure_version_id: intakeState?.site_structure?.id ?? null,
+        config_data: configData,
+        selection_rules: selectionRules,
+        status: pageConfigStatus,
+        commit_classification: commitClassification,
+      };
+      let approvalId: number | null = null;
+      if (commitClassification !== "safe_auto_commit") {
+        approvalId = await requestApproval(
+          "api.site.page_config.create",
+          proposal
+        );
+      }
+      const url = new URL(`${apiBaseUrl}/api/v1/site/page-config`);
+      if (approvalId) {
+        url.searchParams.set("approval_id", `${approvalId}`);
+      }
+      const response = await apiFetch(url.toString(), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(proposal),
+      });
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        throw new Error(payload.detail ?? `HTTP ${response.status}`);
+      }
+      setActionMessage("Page config saved.");
+      await loadPageConfigHistory(pageConfigPageId);
+    } catch (err) {
+      setActionError((err as Error).message);
+    } finally {
+      setPageConfigLoading(false);
+    }
+  };
+
+  const openPageConfigPanel = async () => {
+    const pageId =
+      pageConfigPageId ||
+      draftStructure.pages[0]?.id ||
+      intakeState?.site_structure?.structure_data?.pages?.[0]?.id ||
+      "";
+    setPageConfigPageId(pageId);
+    setShowPageConfigPanel(true);
+    setShowHistoryPanel(false);
+    setShowTaxonomyLog(false);
+    setShowSettingsPanel(false);
+    setMenuOpen(false);
+    if (pageId) {
+      await loadPageConfigHistory(pageId);
+    }
+  };
+
+  const loadPageConfigEntry = (entry: PageConfigVersion) => {
+    setPageConfigPageId(entry.page_id);
+    setPageConfigStatus(entry.status === "approved" ? "approved" : "draft");
+    setPageConfigData(formatJson(entry.config_data));
+    setPageConfigRules(formatJson(entry.selection_rules));
+  };
+
   const restoreStructureVersion = async (version: SiteStructureRecord) => {
     const structure = version.structure_data ?? emptyStructure;
     setDraftStructure(structure);
@@ -887,7 +1193,7 @@ export default function SiteIntakePage() {
     setActionError(null);
     setActionMessage(null);
     try {
-      const response = await fetch(
+      const response = await apiFetch(
         `${apiBaseUrl}/api/v1/site/structure/change-request`,
         {
           method: "POST",
@@ -982,12 +1288,79 @@ export default function SiteIntakePage() {
 
   return (
     <div className="space-y-8">
-      <div>
-        <h2 className="text-2xl font-semibold text-zinc-900">Site Intake</h2>
-        <p className="mt-1 text-sm text-zinc-600">
-          Intake flows auto-save. Changes here update staging only; production is
-          unchanged until you publish.
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="text-2xl font-semibold text-zinc-900">Site Intake</h2>
+          <p className="mt-1 text-sm text-zinc-600">
+            Intake flows auto-save. Changes here update staging only; production is
+            unchanged until you publish.
+          </p>
+        </div>
+        <div ref={menuRef} className="relative">
+          <button
+            type="button"
+            onClick={() => setMenuOpen((prev) => !prev)}
+            className="rounded-full border border-zinc-200 px-3 py-1 text-sm font-semibold text-zinc-600 transition hover:border-zinc-300"
+            aria-label="Intake menu"
+            aria-expanded={menuOpen}
+          >
+            ...
+          </button>
+          {menuOpen ? (
+            <div className="absolute right-0 top-full z-10 mt-2 w-52 rounded-2xl border border-zinc-200 bg-white p-2 text-sm text-zinc-700 shadow-lg">
+              <button
+                type="button"
+                onClick={() => void handleReloadSaved()}
+                disabled={stateLoading}
+                className="w-full rounded-xl px-3 py-2 text-left text-sm text-zinc-700 transition hover:bg-zinc-50 disabled:cursor-not-allowed"
+              >
+                {stateLoading ? "Reloading..." : "Reload saved intake"}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowHistoryPanel((prev) => !prev);
+                  setShowTaxonomyLog(false);
+                  setShowPageConfigPanel(false);
+                  setMenuOpen(false);
+                }}
+                className="w-full rounded-xl px-3 py-2 text-left text-sm text-zinc-600 transition hover:bg-zinc-50"
+              >
+                {showHistoryPanel ? "Hide version history" : "Show version history"}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const next = !showTaxonomyLog;
+                  setShowTaxonomyLog(next);
+                  setShowHistoryPanel(false);
+                  setShowPageConfigPanel(false);
+                  setMenuOpen(false);
+                  if (next) {
+                    void loadTaxonomyLog();
+                  }
+                }}
+                className="w-full rounded-xl px-3 py-2 text-left text-sm text-zinc-600 transition hover:bg-zinc-50"
+              >
+                {showTaxonomyLog ? "Hide taxonomy history" : "Taxonomy history"}
+              </button>
+              <button
+                type="button"
+                onClick={() => void openPageConfigPanel()}
+                className="w-full rounded-xl px-3 py-2 text-left text-sm text-zinc-600 transition hover:bg-zinc-50"
+              >
+                Page config
+              </button>
+              <button
+                type="button"
+                onClick={() => void resetFromProfile()}
+                className="w-full rounded-xl px-3 py-2 text-left text-sm text-rose-600 transition hover:bg-rose-50"
+              >
+                Reset intake
+              </button>
+            </div>
+          ) : null}
+        </div>
       </div>
 
       <section className="rounded-2xl border border-zinc-200 bg-white p-6">
@@ -1067,45 +1440,6 @@ export default function SiteIntakePage() {
             >
               Manage site images
             </button>
-            <div ref={menuRef} className="relative">
-              <button
-                type="button"
-                onClick={() => setMenuOpen((prev) => !prev)}
-                className="rounded-full border border-zinc-200 px-3 py-1 text-sm font-semibold text-zinc-600 transition hover:border-zinc-300"
-                aria-label="Intake menu"
-              >
-                ...
-              </button>
-              {menuOpen ? (
-                <div className="absolute right-0 top-full z-10 mt-2 w-52 rounded-2xl border border-zinc-200 bg-white p-2 text-sm text-zinc-700 shadow-lg">
-                  <button
-                    type="button"
-                    onClick={() => void handleReloadSaved()}
-                    disabled={stateLoading}
-                    className="w-full rounded-xl px-3 py-2 text-left text-sm text-zinc-700 transition hover:bg-zinc-50 disabled:cursor-not-allowed"
-                  >
-                    {stateLoading ? "Reloading..." : "Reload saved intake"}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowHistoryPanel((prev) => !prev);
-                      setMenuOpen(false);
-                    }}
-                    className="w-full rounded-xl px-3 py-2 text-left text-sm text-zinc-600 transition hover:bg-zinc-50"
-                  >
-                    {showHistoryPanel ? "Hide version history" : "Show version history"}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => void resetFromProfile()}
-                    className="w-full rounded-xl px-3 py-2 text-left text-sm text-rose-600 transition hover:bg-rose-50"
-                  >
-                    Reset intake
-                  </button>
-                </div>
-              ) : null}
-            </div>
           </div>
         </div>
       </section>
@@ -1288,6 +1622,252 @@ export default function SiteIntakePage() {
                   </div>
                 ) : (
                   <p className="text-xs text-zinc-500">No structure history.</p>
+                )}
+              </div>
+            </div>
+          </aside>
+        </div>
+      ) : null}
+
+      {showTaxonomyLog ? (
+        <div className="fixed inset-0 z-20">
+          <button
+            type="button"
+            aria-label="Close taxonomy history"
+            onClick={() => setShowTaxonomyLog(false)}
+            className="absolute inset-0 cursor-default bg-black/20"
+          />
+          <aside className="absolute right-6 top-24 w-full max-w-[360px] rounded-2xl border border-zinc-200 bg-white p-5 shadow-xl">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-semibold text-zinc-900">
+                  Taxonomy history
+                </h3>
+                <p className="text-xs text-zinc-500">
+                  Restore a previous taxonomy snapshot.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowTaxonomyLog(false)}
+                className="rounded-full border border-zinc-200 px-3 py-1 text-xs font-semibold text-zinc-500 transition hover:border-zinc-300"
+              >
+                Close
+              </button>
+            </div>
+            <div className="mt-4 space-y-3">
+              {taxonomyLogLoading ? (
+                <p className="text-xs text-zinc-500">Loading history...</p>
+              ) : taxonomyLog.length ? (
+                taxonomyLog.map((item) => {
+                  const taxonomyData = item.taxonomy_data ?? emptyTaxonomy;
+                  const isEmpty = isTaxonomyEmpty(taxonomyData);
+                  const isSame = isTaxonomySame(taxonomyData);
+                  const disabled =
+                    isEmpty || isSame || taxonomyRestoreId === item.id;
+                  const reason = isEmpty
+                    ? "Empty"
+                    : isSame
+                    ? "No changes"
+                    : null;
+                  return (
+                    <div
+                      key={item.id}
+                      className="rounded-xl border border-zinc-200 bg-white px-3 py-2"
+                    >
+                      <p className="text-xs font-semibold text-zinc-700">
+                        {item.change_type} • {item.status} •{" "}
+                        {formatTimestamp(item.created_at)}
+                      </p>
+                      <p className="text-[11px] text-zinc-500">
+                        {taxonomyData.tags.length} tags
+                      </p>
+                      <div className="mt-2 flex flex-wrap items-center gap-2">
+                        {reason ? (
+                          <span className="text-[11px] text-zinc-400">{reason}</span>
+                        ) : null}
+                        <button
+                          type="button"
+                          onClick={() => void restoreTaxonomyChange(item, "draft")}
+                          disabled={disabled}
+                          className="rounded-full border border-zinc-200 px-2 py-1 text-[11px] font-semibold text-zinc-700 transition hover:border-zinc-300 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          Restore draft
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            void restoreTaxonomyChange(item, "approved")
+                          }
+                          disabled={disabled}
+                          className="rounded-full border border-emerald-200 px-2 py-1 text-[11px] font-semibold text-emerald-700 transition hover:border-emerald-300 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          Restore approved
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })
+              ) : (
+                <p className="text-xs text-zinc-500">No taxonomy history.</p>
+              )}
+            </div>
+          </aside>
+        </div>
+      ) : null}
+
+      {showPageConfigPanel ? (
+        <div className="fixed inset-0 z-20">
+          <button
+            type="button"
+            aria-label="Close page config"
+            onClick={() => setShowPageConfigPanel(false)}
+            className="absolute inset-0 cursor-default bg-black/20"
+          />
+          <aside className="absolute right-6 top-20 w-full max-w-[520px] rounded-2xl border border-zinc-200 bg-white p-5 shadow-xl">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-semibold text-zinc-900">
+                  Page config
+                </h3>
+                <p className="text-xs text-zinc-500">
+                  Save a page config version and optional selection rules.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowPageConfigPanel(false)}
+                className="rounded-full border border-zinc-200 px-3 py-1 text-xs font-semibold text-zinc-500 transition hover:border-zinc-300"
+              >
+                Close
+              </button>
+            </div>
+
+            <div className="mt-4 space-y-4">
+              <div className="grid gap-3 sm:grid-cols-[2fr_1fr]">
+                <label className="space-y-1 text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                  Page
+                  <select
+                    value={pageConfigPageId}
+                    onChange={(event) => {
+                      const value = event.target.value;
+                      setPageConfigPageId(value);
+                      if (value) {
+                        void loadPageConfigHistory(value);
+                      }
+                    }}
+                    className="mt-1 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm font-normal text-zinc-700"
+                  >
+                    <option value="">Select a page</option>
+                    {draftStructure.pages.map((page) => (
+                      <option key={page.id} value={page.id}>
+                        {page.title}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="space-y-1 text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                  Status
+                  <select
+                    value={pageConfigStatus}
+                    onChange={(event) =>
+                      setPageConfigStatus(
+                        event.target.value === "approved" ? "approved" : "draft"
+                      )
+                    }
+                    className="mt-1 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm font-normal text-zinc-700"
+                  >
+                    <option value="draft">Draft</option>
+                    <option value="approved">Approved</option>
+                  </select>
+                </label>
+              </div>
+
+              <label className="space-y-1 text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                Config JSON
+                <textarea
+                  value={pageConfigData}
+                  onChange={(event) => setPageConfigData(event.target.value)}
+                  rows={6}
+                  className="mt-1 w-full rounded-2xl border border-zinc-200 px-3 py-2 text-xs font-mono text-zinc-700"
+                  placeholder={`{\n  "hero": {"asset_id": "..."}\n}`}
+                />
+              </label>
+
+              <label className="space-y-1 text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                Selection rules JSON (optional)
+                <textarea
+                  value={pageConfigRules}
+                  onChange={(event) => setPageConfigRules(event.target.value)}
+                  rows={5}
+                  className="mt-1 w-full rounded-2xl border border-zinc-200 px-3 py-2 text-xs font-mono text-zinc-700"
+                  placeholder={`{\n  "slots": []\n}`}
+                />
+              </label>
+
+              <div className="flex flex-wrap items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => void savePageConfigVersion()}
+                  disabled={pageConfigLoading}
+                  className="rounded-full border border-zinc-900 bg-zinc-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-70"
+                >
+                  {pageConfigLoading ? "Saving..." : "Save page config"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPageConfigData("{\n\n}");
+                    setPageConfigRules("{\n\n}");
+                  }}
+                  className="rounded-full border border-zinc-200 px-4 py-2 text-sm font-semibold text-zinc-600 transition hover:border-zinc-300"
+                >
+                  Clear
+                </button>
+              </div>
+
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                    Recent configs
+                  </h4>
+                  <button
+                    type="button"
+                    onClick={() => void loadPageConfigHistory(pageConfigPageId)}
+                    disabled={!pageConfigPageId || pageConfigHistoryLoading}
+                    className="text-xs font-semibold text-zinc-500 transition hover:text-zinc-700 disabled:cursor-not-allowed"
+                  >
+                    {pageConfigHistoryLoading ? "Loading..." : "Refresh"}
+                  </button>
+                </div>
+                {pageConfigHistory.length ? (
+                  <div className="space-y-2">
+                    {pageConfigHistory.map((entry) => (
+                      <div
+                        key={entry.id}
+                        className="rounded-xl border border-zinc-200 bg-white px-3 py-2"
+                      >
+                        <p className="text-xs font-semibold text-zinc-700">
+                          {entry.status} • {formatTimestamp(entry.created_at)}
+                        </p>
+                        <p className="text-[11px] text-zinc-500">
+                          {entry.selection_rules ? "rules" : "no rules"} • snapshot{" "}
+                          {entry.taxonomy_snapshot_id ?? "none"}
+                        </p>
+                        <div className="mt-2">
+                          <button
+                            type="button"
+                            onClick={() => loadPageConfigEntry(entry)}
+                            className="rounded-full border border-zinc-200 px-2 py-1 text-[11px] font-semibold text-zinc-700 transition hover:border-zinc-300"
+                          >
+                            Load into editor
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs text-zinc-500">No page configs yet.</p>
                 )}
               </div>
             </div>

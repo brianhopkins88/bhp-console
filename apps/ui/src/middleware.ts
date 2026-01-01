@@ -11,6 +11,10 @@ const unauthorizedResponse = () =>
   });
 
 export function middleware(request: NextRequest) {
+  if (request.nextUrl.pathname.startsWith("/admin/login")) {
+    return NextResponse.next();
+  }
+
   const username = process.env.ADMIN_BASIC_AUTH_USER;
   const password = process.env.ADMIN_BASIC_AUTH_PASS;
 

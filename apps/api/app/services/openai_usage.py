@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models.openai_usage import OpenAIUsage
+from packages.domain.models.openai_usage import OpenAIUsage
 
 
 def get_usage(db: Session) -> OpenAIUsage:

@@ -101,6 +101,27 @@ Seed script TLS:
 ## Tests
 - API: `cd apps/api && pytest`
 - UI: `cd apps/ui && npm run lint`
+- Smoke (canonical read tools): `make smoke-e0-09`
+
+## Canonical approvals
+- Canonical REST writes require `commit_classification`; any value other than `safe_auto_commit` requires `approval_id`.
+- Approval actions for REST writes:
+  - `api.site.business_profile.create`
+  - `api.site.structure.create`
+  - `api.site.page_config.create`
+- Tool gateway enforces the same approval rules for canonical mutations.
+
+## Auth (foundation)
+- Users are stored in DB with salted password hashes; sessions are stored server-side.
+- Login sets an HttpOnly session cookie; admin API endpoints require an active session.
+- For cross-site UI (Vercel) → API (Render), set `BHP_AUTH_SESSION_COOKIE_SAMESITE=none` and `BHP_AUTH_SESSION_COOKIE_SECURE=1`.
+- Bootstrap admin user via env (see `BHP_AUTH_BOOTSTRAP_USER_ID` / `BHP_AUTH_BOOTSTRAP_PASSWORD`) or use the auth endpoints once seeded.
+
+## Epic 0 vision completion (planned)
+- Enforce deterministic regeneration with locked vs refreshable slots (Hero + base Logo locked by default).
+- Ingest optional starter site descriptions (JSON) with governance and immutability rules.
+- Implement system invariants checks (e.g., required Hero/Logo) tied to policy gating.
+- Expand staging/rollback workflow beyond metadata (manual checklist + operator flow).
 
 ## Troubleshooting
 - Vercel build fails with "No entrypoint found": confirm Root Directory is `apps/ui` and Framework Preset is Next.js.

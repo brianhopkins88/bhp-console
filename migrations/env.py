@@ -11,14 +11,16 @@ project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 api_root = os.path.join(project_root, "apps", "api")
 sys.path.extend([project_root, api_root])
 
-from app.db.base import Base  # noqa: E402
-from app.models import assets  # noqa: F401,E402
-from app.models import openai_usage  # noqa: F401,E402
-from app.models import agent_runs  # noqa: F401,E402
-from app.models import approvals  # noqa: F401,E402
-from app.models import site_intake  # noqa: F401,E402
-from app.models import memory  # noqa: F401,E402
-from app.models import site_ops  # noqa: F401,E402
+from packages.domain.db.base import Base  # noqa: E402
+from packages.domain.models import assets  # noqa: F401,E402
+from packages.domain.models import openai_usage  # noqa: F401,E402
+from packages.domain.models import agent_runs  # noqa: F401,E402
+from packages.domain.models import approvals  # noqa: F401,E402
+from packages.domain.models import site_intake  # noqa: F401,E402
+from packages.domain.models import memory  # noqa: F401,E402
+from packages.domain.models import site_ops  # noqa: F401,E402
+from packages.domain.models import canonical  # noqa: F401,E402
+from packages.domain.models import auth  # noqa: F401,E402
 
 config = context.config
 

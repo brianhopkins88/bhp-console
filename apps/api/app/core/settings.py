@@ -29,6 +29,12 @@ class Settings(BaseSettings):
     openai_token_budget: int = 1_000_000
     api_basic_auth_user: str | None = None
     api_basic_auth_pass: str | None = None
+    auth_bootstrap_user_id: str | None = None
+    auth_bootstrap_password: str | None = None
+    auth_session_cookie_name: str = "bhp_session"
+    auth_session_ttl_hours: int = 24
+    auth_session_cookie_secure: bool = False
+    auth_session_cookie_samesite: str = "lax"
 
     model_config = SettingsConfigDict(
         env_prefix="BHP_",

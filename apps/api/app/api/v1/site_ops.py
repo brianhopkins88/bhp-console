@@ -7,8 +7,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
-from app.models.site_ops import SiteDeployment, SiteTestRun
-from app.schemas.site_ops import (
+from packages.domain.models.site_ops import SiteDeployment, SiteTestRun
+from packages.domain.schemas.site_ops import (
     SiteDeploymentCreate,
     SiteDeploymentOut,
     SiteTestRunCreate,

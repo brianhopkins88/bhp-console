@@ -62,3 +62,6 @@ smoke-e0-05:
 
 smoke-e0-06-07:
 	API_BASE="$${API_BASE:-http://localhost:8001/api/v1}" ./scripts/smoke_e0_06_07.sh
+
+smoke-e0-09:
+	API_BASE="$${API_BASE:-http://localhost:8001/api/v1}" ./scripts/smoke_e0_09.sh

@@ -4,11 +4,43 @@
 
 ### Document status
 
-- Version: v0.8
+- Version: v0.10
 - Scope: Local-first web application running on a laptop initially, designed to evolve to cloud-hosted components later.
 - Multi-tenant intent: the console will support multiple photography businesses; Brian is the first user and an app developer.
-- Key change from v0.7: recorded Epic 1 implementation progress (intake UI, approvals, topic taxonomy integration, structural change requests).
-- Status: Epic 0 complete; Epic 1 intake + tagging workflows are in progress.
+- Key change from v0.8: Rewrote and expanded Epics 1 and 2.
+  - Epic 0 updates in support of Epics 1-3
+  
+    - **Added canonical state versioning**
+  
+      - Business profiles, site structures, and pages are versioned canonical objects
+      - Topic taxonomy is canonical and versioned only as snapshots during site structure generation
+  
+      **Introduced deterministic regeneration guarantees**
+  
+    - Agent runs are fully logged, replayable, and scoped
+    - Locked vs refreshable asset slots formalized (Hero image and base Logo are locked by default)
+    - Tag-based selection rules are stored with taxonomy snapshots for replayable regeneration
+  
+      **Formalized invariant enforcement**
+  
+    - Hero and Logo requirements are enforced by the policy engine, not UI logic
+  
+      **Clarified starter site descriptions**
+  
+    - Treated as optional, read-only reasoning inputs, not templates
+    - System operates without them when none exist
+  
+      **Strengthened Epic 0’s role**
+  
+      - Explicitly positioned as the foundation for Epics 1–3 intelligence and publishing workflows
+  - Epics 1 and 2 rewrite:
+  
+    - ❌ Removed template-driven framing
+    - ✅ Elevated business intelligence and hybrid strategy
+    - ✅ Clarified user vs. system authority
+    - ✅ Formalized page-level regeneration as a core capability
+    - ✅ Positioned Epics 1 & 2 as the **personalization engine** of the app
+- Status: Epic 0 refactor underway to align with Architecture v1.1 and updated Epics 1–2. 
 
 Below is a vision-level user story set (organized as epics -> user stories) written as build specs with acceptance criteria so an AI or developer can derive tests.
 
@@ -21,114 +53,368 @@ Below is a vision-level user story set (organized as epics -> user stories) writ
 
 ------
 
-## Epic 0: Architecture migration for agentic workflows
+## Epic 0 Architecture Migration for Agentic Workflows
 
-Note: Epic 0 prepares the current codebase for Epics 1-3 by aligning it to the agentic architecture, memory needs, and safety controls.
+### Epic Intent
 
-- **Architecture assessment and migration plan**
-  - **As Brian, I want** a clear architecture migration plan **so that** the current codebase is ready for agent-driven site creation, tagging, and publishing.
-    - Acceptance:
-      - [AC-001] Given the existing codebase, when Epic 0 completes, then a written gap analysis maps current modules to the target architecture (domain, agents, tools, policy, jobs, UI).
-      - [AC-002] Given the migration plan, when the code is updated, then the repo has clear module boundaries for agent runtime, tool gateway, policy engine, and background jobs.
+Epic 0 establishes the **foundational architecture required for safe, deterministic, agent-driven workflows** across Epics 1, 2, and 3.
 
-- **Agent runtime + memory foundation**
-  - **As Brian, I want** agent memory and retrieval in place **so that** agents can use business context and prior instructions reliably.
-    - Acceptance:
-      - [AC-003] Given a business description, when it is stored, then agents can retrieve and reuse it for site structure and service page generation.
-      - [AC-004] Given an agent run, when it executes, then it logs plan, tool calls, and outcomes with a stable run ID.
+This epic does **not** implement business logic or site features. Instead, it guarantees that:
 
-- **Operational readiness for site generation**
-  - **As Brian, I want** the site-generation pipeline wired to testing and staging **so that** AI-driven changes remain safe.
-    - Acceptance:
-      - [AC-005] Given a site change request, when an agent applies it, then automated checks run and failures block staging/publish.
-      - [AC-006] Given the staging environment, when a deploy is triggered, then the system records deployment metadata and a rollback target.
+- Agents can reason over durable, versioned state
+- Human-in-the-loop approvals and invariants are centrally enforced
+- Regeneration and publishing workflows are predictable, auditable, and reversible
+- Later epics can evolve without architectural rework
 
-------
+Epic 0 is the **enabling layer** for business intelligence, image semantics, site generation, and publishing.
 
-## Epic 1: Site structure intake + image upload and topic tagging
+### Architecture assessment and migration plan
 
-- **Conversational entrypoints and guardrails**
-  - **As Brian, I want** a conversational menu with preset prompts and free-form input **so that** I can start quickly or ask naturally.
-    - Acceptance:
-      - [AC-007] Given a new session, when I open the site builder, then I see preset prompts: "Build a new website", "Add or delete website pages / update page descriptions", and "Manage site images".
-      - [AC-008] Given a free-form intent outside supported functions, when I submit it, then the system replies with a fixed out-of-scope message and suggests supported prompts.
+**As Brian, I want** a clear architecture migration plan
+**So that** the current codebase is ready for agent-driven site creation, regeneration, and publishing.
 
-- **Business intake and site taxonomy draft**
-  - **As Brian, I want** the system to ask structured questions about my photography business **so that** it can propose a site structure and topic tags.
-    - Acceptance:
-      - [AC-009] Given I choose "Build a new website", when the interview runs, then it covers services, delivery method, pricing model, and subject focus.
-      - [AC-010] Given my responses, when the system has enough detail, then it proposes a site structure and topic tag taxonomy.
-      - [AC-011] Given the proposal, when it is presented, then I receive both a structured UI view and a JSON output with schema: `site_structure.pages[] {id, title, slug, description, parent_id, order, status, template_id, service_type}` and `topic_taxonomy.tags[] {id, label, parent_id}` (see `docs/Site Intake Schema.md`).
-      - [AC-012] Given my review, when I request changes, then the system revises and re-presents the structure and taxonomy before any database commit.
-      - [AC-013] Given approval, when I accept the proposal, then the site structure, business description, and topic taxonomy are saved as inputs to tagging and generation.
-
-- **Site structure editing**
-  - **As Brian, I want** to add, delete, or modify pages with defaults **so that** the structure stays current without manual schema edits.
-    - Acceptance:
-      - [AC-014] Given an existing site structure, when I choose "Add or delete pages", then the system shows the current page tree and asks what to change.
-      - [AC-015] Given a new page, when it is created, then the system provides a default page description that I can edit.
-      - [AC-016] Given edits, when the system proposes updates, then it requires approval before persisting changes.
-
-- **Image upload and topic tagging (MVP scale)**
-  - **As Brian, I want** to upload images and manage topic tags **so that** the library is ready for generation.
-    - Acceptance:
-      - [AC-017] Given image uploads, when they complete, then images are stored, indexed, and ready for tagging.
-      - [AC-018] Given an image, when auto-tagging runs, then the system assigns topic tags from the approved taxonomy with confidence scores for review.
-      - [AC-019] Given manual topic tags, when I apply them, then they persist and are searchable.
-      - [AC-020] Given a new tag not in the taxonomy, when the system can infer hierarchy (example: `animal.bird`), then it auto-creates the nested tag and offers an approval/revert option; otherwise it proposes the new tag for approval.
-      - [AC-021] Given the MVP scope, when I manage images in this workflow, then the UI remains optimized for about 100 images or fewer at a time.
-
-- **Site design chat + approval gating**
-  - **As Brian, I want** a chat-based design assistant **so that** I can draft and polish page descriptions with approval gates.
-    - Acceptance:
-      - [AC-022] Given the design chat, when I draft page descriptions, then the system proposes polished copy, structure updates, and a site review with clarifying questions as needed.
-      - [AC-023] Given proposed updates, when I review them, then an explicit approval action is required before committing changes.
-      - [AC-024] Given the design and tagging workflows, when I switch between them, then my context and drafts are preserved.
-
-- **Example:** "Describe my photography business, approve the proposed site structure and topic tags, upload 50 images, review tags, and draft page descriptions."
+- **[AC-0.01]** Given the existing codebase, when Epic 0 completes, then a written gap analysis maps current modules to the target architecture (domain state, agents, tools, policy engine, jobs, UI).
+- **[AC-0.02]** Given the migration plan, when the code is updated, then the repository has clear module boundaries for:
+  - Agent runtime
+  - Tool gateway
+  - Policy and invariant enforcement
+  - Background jobs
+  - UI adapters
 
 ------
 
-## Epic 2: Automated site generation and photo governance
+### Agent runtime, memory, and replayability
 
-- **Template-based generation + staging preview**
-  - **As Brian, I want** to generate a full site from a template **so that** I can review a complete draft quickly.
-    - Acceptance:
-      - [AC-025] Given an approved site structure and topic taxonomy, when I select a template, then the system generates a full draft with AI copy and tagged images.
-      - [AC-026] Given a generated draft, when I deploy to staging, then I receive a staging URL and deployment record.
+**As Brian, I want** agents with durable memory and replayable execution
+**So that** business understanding, site generation, and regeneration are reliable and debuggable.
 
-- **Per-page feedback chat + iteration**
-  - **As Brian, I want** to give per-page feedback via chat **so that** the system can refine pages without manual edits.
-    - Acceptance:
-      - [AC-027] Given a page, when I submit feedback, then the system asks clarifying questions if needed and generates an updated page version.
-      - [AC-028] Given multiple iterations, when I view history, then I can compare versions and restore a prior one.
+- **[AC-0.03]** Given a business profile or site state, when it is stored, then agents can retrieve and reuse it across sessions and runs.
+- **[AC-0.04]** Given an agent run, when it executes, then it logs:
+  - Inputs
+  - Constraints
+  - Plan
+  - Tool calls
+  - Outputs
+    with a stable run ID.
+- **[AC-0.08]** Given a regeneration request, when an agent executes, then the full set of inputs and constraints is logged and replayable to ensure deterministic regeneration.
 
-- **Image assignment + layout automation**
-  - **As Brian, I want** to manually assign images to pages or let the system fill gaps **so that** placement is easy but still guided.
-    - Acceptance:
-      - [AC-029] Given a page, when I select "Add image to this page", then the image is assigned to that page and overrides auto-placement.
-      - [AC-030] Given no manual assignments for a page, when the system places images, then it uses star ratings with fallback (5-star, then 4-star, then 3-star) and features the highest-rated images.
-      - [AC-031] Given a page layout, image count, and my layout preferences, when the system renders the page, then it chooses featured layouts for 1-2 images and gallery layouts for larger sets.
+------
 
-- **Role rules and governance**
-  - **As Brian, I want** role constraints for hero, logo, showcase, and gallery assets **so that** published pages remain valid.
-    - Acceptance:
-      - [AC-032] Given an existing hero_main, when I set another image as hero_main, then the prior hero_main is demoted to showcase.
-      - [AC-033] Given a published hero/logo/showcase asset, when I try to delete it, then the system blocks deletion and requires replacement.
-      - [AC-034] Given gallery images, when I delete or retag them, then the system updates placement on next publish unless the image is explicitly published.
+### Canonical state and versioning (New)
 
-- **Freshness automation**
-  - **As Brian, I want** automated freshness recommendations **so that** the site stays active without constant manual browsing.
-    - Acceptance:
-      - [AC-035] Given a refresh interval, when it triggers, then the system proposes image swaps based on tags, roles, rating, and recent usage.
+**As Brian, I want** all business and site inputs treated as canonical, versioned state
+**So that** regeneration, rollback, and future business evolution are safe.
 
-- **SEO and performance basics**
-  - **As Brian, I want** SEO and optimization helpers **so that** the site performs well.
-    - Acceptance:
-      - [AC-036] Given a page, when I request SEO suggestions, then the system provides title/description options and editable alt-text for images.
-      - [AC-037] Given uploaded images, when derivatives are generated, then web-optimized sizes and lazy-loading defaults are used in renders.
+- **[AC-0.07]** Given business profiles, image libraries, site structures, or page configurations, when they are saved, then the system persists them as versioned canonical state objects with change history.
+- **[AC-0.07a]** Given a prior version of canonical state, when requested, then the system can restore or branch from that version without affecting published output.
+- **[AC-0.07b]** Given topic taxonomy updates, when they are saved, then the taxonomy remains canonical and unversioned by default; when a site structure is generated or regenerated, a TaxonomySnapshot is captured and linked to the resulting canonical versions.
 
-- **Example:** "Select Template A, generate a site from tagged assets, review on staging, add a hero image to the About page, and approve a gallery refresh."
+------
+
+### Deterministic selection and slot locking (New)
+
+**As Brian, I want** deterministic asset selection rules and locked slots
+**So that** regeneration is predictable without sacrificing personalization.
+
+- **[AC-0.08a]** Given a PageConfigVersion or SiteStructureVersion that uses tag-based selection rules, when it is saved, then the rule and its TaxonomySnapshot are stored together to allow deterministic replay.
+- **[AC-0.08b]** Given a regeneration request, when it executes, then locked asset slots are preserved by default (Hero image and base Logo) while refreshable slots may reselect using the stored rules.
+
+------
+
+### Tool governance, policy engine, and invariants
+
+**As Brian, I want** centralized enforcement of rules and invariants
+**So that** invalid states are never committed by agents or UI actions.
+
+- **[AC-0.05]** Given a site change request, when an agent applies it, then all tool calls are schema-validated and policy-checked before execution.
+- **[AC-0.06]** Given approvals are required, when an agent proposes a risky or destructive action, then explicit approval is enforced before proceeding.
+- **[AC-0.06a]** Given commit classification, when a change is limited to spelling or grammar corrections, then it may be safe_auto_commit; all other canonical changes require approval.
+- **[AC-0.09]** Given system-defined invariants (e.g., at least one Hero image and one Logo image), when any user or agent action would violate them, then the policy engine blocks the action and returns corrective guidance.
+
+------
+
+### Starter site descriptions (Data-driven reasoning inputs)
+
+**As Brian, I want** the system to safely use internal starter site descriptions
+**So that** agents can accelerate reasoning without introducing rigid templates.
+
+- **[AC-0.10]** Given internal starter site description files (e.g., JSON), when agents reference them, then:
+  - They are treated as read-only reasoning inputs
+  - They are never rendered directly without agent modification
+  - The resulting site description is always agent-generated and personalized
+  - If no starter site descriptions exist, the system proceeds using only the business profile and canonical state
+
+------
+
+### Operational readiness for staging and publishing
+
+**As Brian, I want** site generation and publishing wired to staging, validation, and rollback
+**So that** AI-driven changes remain safe.
+
+- **[AC-0.11]** Given a staged site deployment, when it completes, then the system records deployment metadata and a rollback target.
+- **[AC-0.12]** Given a failed validation or policy violation, when detected, then staging or publishing is blocked with actionable feedback.
+
+------
+
+### Epic 0 Exit Criteria (Clarified)
+
+Epic 0 is complete when:
+
+- Agents operate over versioned canonical state
+- Regeneration is deterministic and replayable (locked slots + tag rules with snapshots)
+- System invariants are centrally enforced
+- Starter site descriptions are safely governed and optional
+- Staging and rollback are reliable
+
+
+
+## Epic 1: Business Intelligence, Image Semantics, and Foundational Tagging
+
+### Epic Intent
+
+Enable the system to **deeply understand a photographer’s business, positioning, and creative identity**, then construct a **semantically rich image library** that supports personalized site generation.
+
+This epic establishes the **first canonical version** of the business and website, while explicitly supporting **future revision hooks** as the business evolves.
+
+------
+
+### Epic 1.1 – AI-Guided Business Description (Living Profile: First Pass)
+
+**As a photographer, I want** the system to guide me through describing my business in my own words
+**So that** the system can infer my services, audience, positioning, and site needs without forcing rigid categories.
+
+#### System Behavior
+
+- The system conducts a **conversational, adaptive interview**
+- Questions are primarily **open-ended**, captured as free text
+- Follow-up questions adapt based on prior answers
+
+#### Business Signals Collected (Examples)
+
+- Current and desired clients
+- Photography niches (revenue vs. passion)
+- Services, products, or both
+- Pricing and delivery model
+- Differentiation and credibility (years, certifications, notable clients)
+- Personal style and aesthetic preferences
+- Optional inspiration inputs (URLs or screenshots of admired sites)
+
+#### Acceptance Criteria
+
+- **[AC-1.01]** Given a new site setup, when the interview runs, then it captures free-text responses across business, creative, and commercial dimensions.
+- **[AC-1.02]** Given partial or ambiguous responses, when detected, then the system asks clarifying follow-ups.
+- **[AC-1.03]** Given completion, when the interview ends, then a raw business profile is stored as versioned input.
+
+------
+
+### Epic 1.2 – Business Profile Synthesis & Strategy Inference
+
+**As a photographer, I want** the system to summarize and interpret my business description
+**So that** I can confirm or correct how the system understands my work.
+
+#### System Behavior
+
+The AI:
+
+- Produces a plain-language business summary
+- Infers:
+  - Primary and secondary niches
+  - Service-led vs. portfolio-led emphasis
+  - Likely hybrid strategy (if applicable)
+- Flags low-confidence inferences explicitly
+
+#### Acceptance Criteria
+
+- **[AC-1.04]** Given the business profile, when synthesis runs, then the system presents a readable summary plus inferred signals.
+- **[AC-1.05]** Given user corrections, when submitted, then the system updates the inferred understanding before proceeding.
+
+------
+
+### Epic 1.3 – Image Upload and Topic Auto-Tagging
+
+**As a photographer, I want** to upload my portfolio and have images automatically tagged by subject
+**So that** my image library is usable without manual tagging from scratch.
+
+#### System Behavior
+
+- Supports bulk image upload
+- Auto-tagging runs only when the user opts in
+- Automatically assigns **Topic tags only**
+  - Subject, environment, mood, time/light (when detectable)
+- Provides confidence scores for review
+- Unknown tags are captured as pending taxonomy candidates
+
+#### User Control
+
+- Users may:
+  - Add, remove, or rename Topic tags
+  - Review and approve pending taxonomy candidates
+- Topic taxonomy is **global per business**, not page- or gallery-scoped; snapshots are captured only when generating site structure
+
+#### Acceptance Criteria
+
+- **[AC-1.06]** Given uploaded images and opt-in auto-tagging, when auto-tagging runs, then topic tags are assigned from the approved taxonomy and unknown tags are stored as pending candidates.
+- **[AC-1.06a]** Given pending taxonomy candidates, when the user reviews them, then approvals promote tags into the global taxonomy and rejections are retained for audit.
+- **[AC-1.07]** Given manual edits, when saved, then topic tags persist and update search and selection logic.
+
+------
+
+### Epic 1.4 – Role, Service, and Branding Signals (User-Editable with Guardrails)
+
+**As a photographer, I want** to apply meaningful signals to my images
+**So that** the system understands which images matter most.
+
+#### User Actions
+
+- Assign or modify **Role tags** (e.g., Hero, Feature, Support)
+- Assign or modify **Service tags**
+- Select:
+  - At least one **Hero image**
+  - At least one **Logo image**
+- Optionally “star” Feature images
+
+#### System-Enforced Invariants
+
+- The system **must always enforce**:
+  - ≥ 1 Hero image
+  - ≥ 1 Logo image
+- If a required asset is removed, the system blocks progression and prompts replacement.
+
+#### Acceptance Criteria
+
+- **[AC-1.08]** Given Role or Service edits, when applied, then system invariants are continuously validated.
+- **[AC-1.09]** Given an invalid state (no Hero or Logo), when detected, then progression is blocked with corrective guidance.
+
+------
+
+#### **Epic 1 Output**
+
+- Living business profile (v1)
+- Global topic taxonomy
+- Curated, semantically tagged image library
+- Valid Role, Service, Hero, and Logo signals
+
+------
+
+## Epic 2: Personalized Site Structure Generation and Staged Website Assembly
+
+### Epic Intent
+
+Transform business intelligence and image semantics into a **visually polished, personalized website draft** that the user can review and refine page by page in a staging environment.
+
+This epic explicitly **rejects template-driven site creation** in favor of **agent-reasoned personalization**, while allowing optional starter site descriptions as internal accelerators when available.
+
+------
+
+### Epic 2.1 – Site Structure and Strategy Proposal
+
+**As a photographer, I want** the system to propose a site structure that reflects my business and goals
+**So that** my website tells a clear, compelling story.
+
+#### System Behavior
+
+Using Epic 1 outputs, the system:
+
+- Proposes:
+  - Page hierarchy and navigation
+  - Galleries and service groupings
+- Selects a strategic framing:
+  - Single-niche
+  - Hybrid with core identity
+  - Anchor niche with secondary services
+  - Hub-style separation (when niches diverge strongly)
+
+#### Starter Site Descriptions (Internal)
+
+- The system may reference internal **starter site description files** (e.g., JSON)
+- These are **inputs to agent reasoning**, not fixed templates
+- Agents modify and personalize the structure before presentation
+- If none exist, the system generates structure directly from the business profile and canonical state
+
+#### Acceptance Criteria
+
+- **[AC-2.01]** Given business synthesis, when structure generation runs, then a proposed site map with rationale is produced.
+- **[AC-2.02]** Given hybrid businesses, when detected, then the proposal explicitly explains the chosen strategy.
+
+------
+
+### Epic 2.2 – User Review and Controlled Edits
+
+**As a photographer, I want** to adjust the proposed structure before site generation
+**So that** the site reflects my intent.
+
+#### User Permissions
+
+- Users may:
+  - Add, remove, or reorder pages
+  - Edit page descriptions
+  - Modify Role and Service assignments
+  - Modify Topic tags
+- Users may **not** violate system invariants (Hero/Logo requirements)
+
+#### Acceptance Criteria
+
+- **[AC-2.03]** Given requested edits, when applied, then the system revalidates structure and tags before committing.
+- **[AC-2.04]** Given approval, when confirmed, then the structure becomes the canonical input for generation.
+
+------
+
+### Epic 2.3 – Staged Website Generation (No Templates)
+
+**As a photographer, I want** a complete draft website generated for review
+**So that** I can see my site as a real, navigable experience.
+
+#### System Behavior
+
+- Generates a React-based site in a staging environment
+- Automatically:
+  - Selects images using Role, Service, and Topic tags via stored selection rules
+  - Captures selection rules alongside a TaxonomySnapshot for deterministic replay
+  - Assigns Hero and Feature placements (Hero and base Logo are locked by default)
+  - Builds galleries dynamically
+- Output is a **visually polished draft**, not a wireframe
+
+#### Acceptance Criteria
+
+- **[AC-2.05]** Given approved inputs, when generation runs, then a staged site URL is produced with full navigation.
+- **[AC-2.05a]** Given tag-based selection rules, when generation runs, then PageConfigVersion and SiteStructureVersion store the rules and TaxonomySnapshot used for deterministic regeneration.
+
+------
+
+### Epic 2.4 – Page-Level Review and Regeneration Loop
+
+**As a photographer, I want** to refine my site page by page
+**So that** I stay in control without manual coding.
+
+#### UI Model
+
+- Main area: browser-like preview
+- Sidebar (per page):
+  - Natural-language change instructions
+  - Image picker (add/remove images)
+  - Regenerate button
+
+#### Regeneration Rules
+
+- Regeneration applies **only to the active page**
+- Must respect:
+  - Locked Hero and base Logo assets
+  - User-assigned Role and Service tags
+- Refreshable slots may reselect using stored tag rules and the captured TaxonomySnapshot
+- AI decides layout, image usage, and decorative vs. gallery placement
+
+#### Acceptance Criteria
+
+- **[AC-2.06]** Given page feedback, when regeneration runs, then only the active page is updated.
+- **[AC-2.07]** Given multiple iterations, when reviewing, then prior versions remain restorable.
+
+------
+
+#### **Epic 2 Output**
+
+- Visually polished, staged website draft
+- User-approved structure and imagery
+- Stable foundation for publishing (Epic 3)
 
 ------
 

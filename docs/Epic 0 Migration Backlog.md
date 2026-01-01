@@ -1,5 +1,7 @@
 # Epic 0 Migration Backlog
 
+> NOTE: Archived first-pass Epic 0 document. Superseded by `docs/BHP Management Console Architecture.md` and `docs/BHP Management Console Vision.md`. This file is retained for historical context and is not maintained during the Epic 0 refactor.
+
 This backlog breaks Epic 0 into actionable work items with dependencies and acceptance tests.
 It aligns to `docs/BHP Management Console Vision.md` (AC-001 to AC-006).
 

@@ -15,41 +15,65 @@ class BusinessProfileCreate(BaseModel):
     profile_data: JsonValue | None = None
     status: str | None = None
     force_new: bool | None = None
+    parent_version_id: int | None = None
+    created_by: str | None = None
+    source_run_id: str | None = None
+    commit_classification: str | None = None
 
 
 class BusinessProfileOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
+    parent_version_id: int | None = None
     name: str | None
     description: str | None
     profile_data: JsonValue | None
+    created_by: str | None = None
+    source_run_id: str | None = None
+    commit_classification: str | None = None
     status: str
     created_at: datetime
-    updated_at: datetime
-    approved_at: datetime | None
+    updated_at: datetime | None = None
+    approved_at: datetime | None = None
 
 
 class SiteStructureCreate(BaseModel):
     status: str | None = None
     structure_data: JsonValue | None = None
+    selection_rules: JsonValue | None = None
+    taxonomy_snapshot_id: int | None = None
+    business_profile_version_id: int | None = None
     force_new: bool | None = None
+    parent_version_id: int | None = None
+    created_by: str | None = None
+    source_run_id: str | None = None
+    commit_classification: str | None = None
 
 
 class SiteStructureOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
+    parent_version_id: int | None = None
+    business_profile_version_id: int | None = None
     status: str
     structure_data: JsonValue | None
+    selection_rules: JsonValue | None = None
+    taxonomy_snapshot_id: int | None = None
+    created_by: str | None = None
+    source_run_id: str | None = None
+    commit_classification: str | None = None
     created_at: datetime
-    approved_at: datetime | None
+    approved_at: datetime | None = None
 
 
 class TopicTaxonomyCreate(BaseModel):
     status: str | None = None
     taxonomy_data: JsonValue | None = None
     force_new: bool | None = None
+    created_by: str | None = None
+    source_run_id: str | None = None
 
 
 class TopicTaxonomyOut(BaseModel):
@@ -60,6 +84,27 @@ class TopicTaxonomyOut(BaseModel):
     taxonomy_data: JsonValue | None
     created_at: datetime
     approved_at: datetime | None
+
+
+class TopicTaxonomyChangeOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    taxonomy_id: int | None
+    status: str
+    change_type: str
+    taxonomy_data: JsonValue | None
+    created_by: str
+    source_run_id: str | None
+    created_at: datetime
+
+
+class TopicTaxonomyRestoreRequest(BaseModel):
+    change_id: int
+    status: str | None = None
+    force_new: bool | None = None
+    created_by: str | None = None
+    source_run_id: str | None = None
 
 
 class BusinessProfileInput(BaseModel):

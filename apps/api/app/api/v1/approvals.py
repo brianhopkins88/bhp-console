@@ -8,9 +8,9 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import require_api_auth
 from app.db.session import get_db
-from app.models.agent_runs import AgentRun, ToolCallLog
-from app.models.approvals import Approval
-from app.schemas.approvals import ApprovalCreate, ApprovalDecision, ApprovalOut
+from packages.domain.models.agent_runs import AgentRun, ToolCallLog
+from packages.domain.models.approvals import Approval
+from packages.domain.schemas.approvals import ApprovalCreate, ApprovalDecision, ApprovalOut
 
 router = APIRouter(dependencies=[Depends(require_api_auth)])
 

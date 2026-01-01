@@ -1,915 +1,573 @@
-# BHP Management Console Application
-## Architecture Document (Agentic AI Edition)
+- - # BHP Management Console
+  
+    ## Architecture Document
+  
+    **Version:** 1.1
+    **Status:** Approved Architecture (Epics 0–3)
+    **Last Updated:** 2025-01-XX
+  
+    ------
+  
+    ## Version Log
+  
+    ### v1.1 (Current)
+  
+    - Restored **Technology Architecture** section
+    - Restored **Application Architecture Diagram** (deployment-oriented)
+    - Clarified runtime, storage, and AI integration boundaries
+    - Explicitly separated logical vs deployment architecture
+    - No functional changes to Epics 0–3 scope
+  
+    ### v1.0
+  
+    - Canonical-first architecture finalized
+    - Deterministic regeneration contract defined
+    - Page-level regeneration formalized
+    - Asset locking + graceful substitution added
+    - Import → canonicalization pipeline added
+    - Conditional taxonomy versioning with alias traceability
+    - Policy engine elevated to single mutation chokepoint
+    - Safe auto-commit vs approval-required commits introduced
+    - Epic 4+ roadmap added
+  
+    ### v0.5
+  
+    - Initial modular architecture
+    - Template-oriented generation framing
+    - Implicit determinism and versioning semantics
+  
+    ------
+  
+    ## 1. Purpose and Scope
+  
+    The BHP Management Console is a **local-first, human-in-the-loop system** for building, managing, and publishing a **personalized photography website** from **canonical structured business state**, not templates.
+  
+    ### In scope (Epics 0–3)
+  
+    - Canonical business profile, site structure, and page configuration
+    - Image library and global taxonomy
+    - Personalized site generation
+    - Page-level regeneration and iteration
+    - Safe staging, publishing, and rollback
+  
+    ### Explicitly out of scope (for now)
+  
+    - CRM
+    - Marketing automation
+    - Commerce
+      (See §14 Epic 4+ Roadmap)
+  
+    ------
+  
+    ## 2. Architectural Principles
+  
+    ### 2.1 Canonical-First
+  
+    - Canonical structured state is authoritative
+    - Generated artifacts are derived and rebuildable
+    - No logic depends on rendered output
+  
+    ### 2.2 Deterministic Canonical Regeneration
+  
+    - Determinism applies only to:
+      - PageConfig JSON
+      - SiteStructure JSON
+      - Deterministic asset selections
+    - HTML/CSS output is not required to be deterministic
+  
+    ### 2.3 Policy as a Chokepoint
+  
+    - All canonical mutations pass through policy + invariants
+    - Applies equally to UI, agents, and background jobs
+  
+    ### 2.4 Human-in-the-Loop by Default
+  
+    - Agents propose changes
+    - Humans approve or allow safe auto-commit
+    - No silent background mutation
+  
+    ------
+  
+    ## 3. Logical Architecture Overview
+  
+    ```
+    [ Web UI ]
+       |
+       v
+    [ API Server ]
+       |
+       +--> [ Policy & Invariants Engine ] <----+
+       |                                        |
+       v                                        |
+    [ Canonical Versioned Store ]               |
+       |                                        |
+       v                                        |
+    [ Derived Artifact Store ]                  |
+                                                |
+    [ Agent Runtime ] --> [ Tool Gateway ] ------+
+    ```
+  
+    Supporting services:
+  
+    - Canonicalizer Service
+    - Run Ledger
+    - External Publishing Connectors
+  
+    ------
+  
+    ## 4. Core Components
+  
+    ### 4.1 Web UI
+  
+    - Conversational interface (intent-driven)
+    - Advanced structured editors
+    - Diff and preview views
+    - Approval and publish controls
+  
+    ### 4.2 API Server
+  
+    - Canonical state orchestration
+    - Versioning and provenance
+    - Workflow coordination
+    - Single entry point for mutation
+  
+    ### 4.3 Canonical Versioned Store
+  
+    - Structured JSON entities
+    - Append-only
+    - Full lineage and provenance
+    - Supports diff and restore
+  
+    ### 4.4 Derived Artifact Store
+  
+    - Immutable HTML/CSS/asset bundles
+    - Linked to canonical versions
+    - Used for preview, staging, publish
+  
+    ### 4.5 Agent Runtime
+  
+    - Stateless per run
+    - Determinism-aware
+    - No direct state mutation
+  
+    ### 4.6 Tool Gateway
+  
+    - Only mechanism for mutation
+    - Tool categories:
+      - Canonical mutation tools
+      - Build / preview tools
+      - External publishing tools
+    - Canonical tools include business profile, site structure, and page config create/approve
+    - Read tools available for latest/history queries
+    - Tool names (canonical):
+      - `canonical.business_profile.create` / `canonical.business_profile.approve`
+      - `canonical.site_structure.create` / `canonical.site_structure.approve`
+      - `canonical.page_config.create`
+      - `canonical.business_profile.latest` / `canonical.business_profile.history`
+      - `canonical.site_structure.latest` / `canonical.site_structure.history`
+      - `canonical.page_config.latest` / `canonical.page_config.history`
+  
+    ### 4.7 Policy & Invariants Engine
+  
+    - Validates every canonical write
+    - Classifies commits
+    - Enforces publish gates
+    - Approval required unless commit_classification is safe_auto_commit
+    - Non-tool REST writes must include approval_id when approval is required
+  
+### 4.8 Canonicalizer Service
 
-### Document status
-- Version: v0.5
-- Scope: Local-first web application running on a laptop initially, designed to evolve to cloud-hosted components later.
-- Multi-tenant intent: the console will support multiple photography businesses; local dev can run in single-user mode.
-- Key change from v0.4: aligned architecture to site intake + auto-generation + publishing flow and added an Epic 0 migration plan.
+- Imports existing generated site artifacts
+- Produces baseline canonical state
 
-### Decision log (index)
+### 4.9 Starter Site Spec Library (Optional)
 
-- D1: Vector store choice (pgvector) -> see Appendix 14
-- D2: Semantic memory scope for site intake -> see Appendix 14
-- D3: Embedding model and dimensions -> see Appendix 14
-- D4: Agent run tracking and approval log (MVP) -> see Appendix 14
-- D5: Modular monolith boundaries -> see Appendix 14
-
-### Documentation maintenance
-
-- Keep the Epic 0 module inventory in `docs/WORKLOG.md` updated when adding or moving code modules.
-- Update the README docs section to point to the inventory when it changes.
-
----
-
-## 1. Vision and scope
-
-### 1.1 Vision
-A web application that helps automate and manage the core functions of a small photography business:
-- Website intake, creation, and publishing
-- Image library intake, tagging taxonomy, and portfolio freshness management
-- Social marketing automation (Facebook, Instagram, others later)
-- Paid advertising planning and execution (Meta first, Google second)
-- Blog drafting and promotion
-- Internal activity journal (notes + best photos) to fuel content recommendations
-- Contact management (CRM) + inbound inquiry handling + proposal drafting
-- Simple finance tracking + tax-category expense reporting
-This console is intended to be multi-tenant so each business has isolated data, assets, and published websites.
-
-### 1.2 Core principles
-- Local-first: runs on a laptop with minimal setup.
-- Human-in-the-loop automation: nothing posts/sends/publishes/spends by default without approval.
-- Agentic where it helps: agents plan and execute multi-step tasks with tool use, but are constrained by policy.
-- Memory-first AI: store business profile, site structure, and tag taxonomy for reuse across agent runs.
-- Guardrailed conversations: unsupported intents return a fixed guidance message and supported prompt options.
-- Modular boundaries: start as a modular monolith but preserve clean interfaces for later service extraction.
-- Connector-based integrations: external systems are accessed only through schema-validated tools.
-- Multi-tenant by default: all data, jobs, and policies are scoped to a tenant/business.
-
-### 1.3 Out of scope (for early versions)
-- Full e-commerce / online payments
-- Full accounting suite (invoicing, double-entry accounting)
-- Fully autonomous behavior that violates platform terms of service
-
----
-
-## 2. Requirements drivers
-
-### 2.1 Key functional drivers (from story map)
-- Epic 0: migration to agent runtime + tool gateway + memory store with safety gating for changes.
-- Epic 1: site intake conversation, site structure and topic taxonomy approval, image upload + topic tagging.
-- Epic 2: template-based website generation with feedback chat, staging review, photo governance, SEO and performance helpers.
-- Epic 3: publish workflow with pre-publish checks, hosting setup, and rollback.
-- V1: journal-driven recommendations, client intake forms, improved reporting.
-- V2+: paid ads automation and "free ads" group posting with rules awareness.
-- Primary complexity: agentic website updates from natural language must map to templates, apply safe changes, and run automated checks.
-
-### 2.2 Quality attributes
-- Reliability: scheduled tasks should run predictably with retries.
-- Safety: approvals, audit logs, budget enforcement, and rollback where possible.
-- Maintainability: modular design, testable connectors and tools.
-- Portability: Docker-based local deployment; cloud migration path.
-
----
-
-## 3. High-level architecture
-
-### 3.1 Architecture style
-- Modular monolith (initial) with a dedicated Agent Runtime and Tool Gateway.
-- Background job system for scheduled and long-running agent sessions.
-- Database + photo storage for authoritative records, with pgvector for semantic retrieval and agent memory.
-- AI pipelines for image tagging and site generation with versioned outputs.
-
-### 3.2 System context
-- External systems:
-  - Hosting (GoDaddy SFTP/FTP or similar)
-  - Meta platforms (Facebook Pages, Instagram, Meta Ads)
-  - Google Ads
-  - Email provider (Gmail API or IMAP)
-  - Optional analytics (Google Analytics)
-
-### 3.3 Logical diagram (Mermaid)
-> Note: This Mermaid is written to avoid semicolons and other syntax that commonly breaks in some Markdown editors.
-
-```mermaid
-flowchart LR
-  User["Photographer - Browser"] --> UI["Web UI (Agent Inbox + Editors)"]
-  UI --> API["API Server (Domain + Auth + Policy)"]
-
-  API --> DB[(Postgres or SQLite)]
-  API --> FS["Photo Storage (Filesystem or MinIO)"]
-  API --> VEC["Vector Store (pgvector)"]
-
-  API --> AR["Agent Runtime (Orchestrator)"]
-  AR --> PE["Policy and Guardrails"]
-
-  AR --> Q["Agent Job Queue and Scheduler"]
-  Q --> W["Workers (Agent Sessions and Pipelines)"]
-
-  PE --> TG["Tool Gateway (Schema Validated Tools)"]
-
-  TG --> META["Meta APIs"]
-  TG --> GADS["Google Ads APIs"]
-  TG --> EMAIL["Email APIs (Gmail or IMAP)"]
-  TG --> HOST["Hosting Deploy (SFTP or FTP)"]
-  TG --> BROWSER["Playwright Assistive Automation"]
-
-```
-
-## 4. Component architecture
-
-## 4.1 Web UI
-
-### Responsibilities
-
-- Dashboards: content calendar, leads inbox, tasks, spend snapshots.
-- Editors: website pages, blog drafts, post drafts, templates, client proposals.
-- Agent Inbox:
-  - view agent plans before execution
-  - approve or reject high-impact actions
-  - see run logs and outcomes
-- Photo library workflow:
-  - upload and preview assets
-  - review AI tags and manual tags
-  - assign roles (hero_main, logo, showcase, gallery, social)
-  - manage publish status for roles
-- Site intake workflow:
-  - collect business description and service details
-  - review and approve site structure and topic taxonomy
-- Website generation workflow:
-  - select templates
-  - generate site drafts
-  - provide iterative feedback via conversation
-  - view agent run status and test results
-  - deploy to staging and review
-
-### Suggested admin routes (scaffolding)
-
-- `/admin/photos` -> upload, tag review, roles, publish state
-- `/admin/site-intake` -> business profile, site structure, topic taxonomy approvals
-- `/admin/site-builder` -> conversational UI + change requests
-- `/admin/site-builder/versions` -> site version history and diffs
-- `/admin/site-builder/runs` -> agent runs, logs, and outputs
-- `/admin/site-builder/tests` -> automated test results and staging status
-
-### Recommended stack
-
-- Next.js (React)
-- Rich text editor: TipTap or similar
-
-------
-
-## 4.2 API Server
-
-### Responsibilities
-
-- Domain logic:
-  - Business profile, site structure, and topic taxonomy management
-  - Website pages, templates, site versioning, and publish pipeline
-  - Conversational change requests and AI-driven site updates
-  - Agent run execution, logs, and automated test results
-  - Photo ingestion, tagging, role management, publish constraints
-  - CRM and inquiry lifecycle
-  - Finance registry (shoots + expenses)
-  - Journal entries and recommendation surfaces
-- Security:
-  - Authentication and authorization
-  - Encrypted secrets storage interface
-- Governance:
-  - Approvals and audit logs
-  - Policy enforcement entry points
-
-### Recommended stack
-
-- FastAPI (Python)
-- Pydantic models for schema validation
-- SQLAlchemy (or SQLModel) for persistence
-
-### Suggested API surface (scaffolding)
-
-- `POST /api/v1/site/intake` -> start intake flow and propose site structure + topic taxonomy
-- `GET /api/v1/site/structure` -> fetch current site structure and page descriptions
-- `PUT /api/v1/site/structure` -> update site structure after approval
-- `GET /api/v1/site/taxonomy` -> list approved topic tags
-- `POST /api/v1/site/taxonomy/proposals` -> propose new topic tags for approval
-- `GET /api/v1/site/templates` -> list available templates
-- `POST /api/v1/site/generate` -> generate a site draft from template + tags
-- `POST /api/v1/site/feedback` -> submit conversational instructions
-- `GET /api/v1/site/versions` -> list site versions and status
-- `POST /api/v1/site/deploy/staging` -> deploy a version to staging
-- `POST /api/v1/site/tests` -> run automated checks on a version
-- `GET /api/v1/conversations` -> list builder conversations
-- `POST /api/v1/conversations/{id}/messages` -> add user instruction + agent reply
-- `GET /api/v1/agent-runs` -> list agent runs and outputs
+- Read-only JSON site specifications used as reasoning inputs
+- Matched to business profiles to seed site structure proposals
+- Not canonical and never rendered directly
+- System operates without these when none exist
 
 ------
-
-## 4.3 Agent Runtime (Orchestrator)
-
-### Purpose
-
-Enable "agentified" automations that can plan and execute multi-step tasks using tools, while remaining safe and auditable.
-
-### Responsibilities
-
-- Planning:
-  - Convert goals into stepwise plans (task decomposition)
-  - Choose tools and required inputs
-- Execution:
-  - Run multi-step sessions with retries and fallbacks
-  - Pause for approvals before high-impact actions
-  - Record step-by-step outcomes
-  - Execute site change requests and generate updated site versions
-  - Run automated checks/tests and report results
-- Memory:
-  - Retrieve relevant context (business profile, site structure, tag taxonomy, brand voice, past posts, templates)
-  - Store outcomes for later use
-- Safety:
-  - Never directly access external systems
-  - Must call tools via the Tool Gateway
-  - Must comply with Policy and Guardrails decisions
-  - Ask clarifying questions when user instructions do not fit a template safely
-  - Return a fixed out-of-scope message when requests fall outside supported intents
-
-### Suggested agent roles (can start as one, split later)
-
-- ImageClassifierAgent
-- WebsiteAgent (generation and iteration)
-- MarketingAgent
-- CRMConciergeAgent
-- FinanceClerkAgent
-- BrandGuardianAgent
-
-### OpenAI-first model usage (recommended routing)
-
-- Planner model: strong reasoning for planning and tool selection
-- Writer model: efficient content drafting (captions, emails, blog drafts)
-- Vision model: image tagging and selection guidance
-- OpenAI APIs power vision tagging, planning, and site-generation instructions
-
-------
-
-## 4.4 Tool Gateway (Schema-validated tools)
-
-### Purpose
-
-Provide a single controlled interface between agents and the rest of the system.
-
-### Responsibilities
-
-- Expose tools with strict input and output schemas
-- Validate inputs and enforce safe defaults
-- Add auditing for every tool call
-- Apply policy checks for risky actions
-
-### Example tool set
-
-- Website
-  - `website.propose_structure(business_profile)`
-  - `website.update_structure(site_structure)`
-  - `website.update_taxonomy(topic_tags)`
-  - `website.generate_from_template(template_id, constraints)`
-  - `website.apply_feedback(site_version_id, instructions)`
-  - `website.run_checks(site_version_id)`
-  - `website.diff_versions(source_version_id, target_version_id)`
-  - `website.preview_patch(page_id, patch)`
-  - `website.deploy_to_staging(site_version_id)` (approval gated)
-  - `website.publish(site_version_id)` (approval gated)
-- Photos
-  - `photos.import(paths)`
-  - `photos.tag_auto(asset_ids)`
-  - `photos.tag_manual(asset_id, tags)`
-  - `photos.set_roles(asset_id, roles)`
-  - `photos.set_role_published(asset_id, role, is_published)`
-  - `photos.set_focal_point(asset_id, x, y)`
-  - `photos.rate(asset_id, rating)`
-  - `photos.search(tags, rating_min, roles, location, season)`
-  - `photos.generate_derivatives(asset_ids, ratios)`
-- Social
-  - `social.create_draft(channel, caption, asset_ids)`
-  - `social.schedule(draft_id, schedule_time)`
-  - `social.publish(draft_id)` (approval gated)
-- Email
-  - `email.ingest_inbox()`
-  - `email.draft_reply(inquiry_id, tone)`
-  - `email.send(draft_id)` (approval gated)
-- Ads
-  - `ads.propose_campaign(budget, geo, objective)`
-  - `ads.launch(campaign_id)` (approval gated)
-- Automation runner
-  - `browser.open_prefilled_post(target, content)` (approval gated)
-
-------
-
-## 4.5 Policy and Guardrails (Policy Engine)
-
-### Purpose
-
-Enforce rules outside the model so the system remains safe, predictable, and compliant.
-
-### Responsibilities
-
-- Approval rules:
-  - Always require explicit approval for send, post, publish, and launch ads by default
-  - MVP uses a simple proposal + approval log (state machine can be added later)
-- Budget enforcement:
-  - monthly cap
-  - per-campaign cap
-  - hard blocks when limits exceeded
-- Asset governance:
-  - enforce exactly one published hero_main
-  - prevent deletion of published logo/showcase assets; require replacement
-- Site governance:
-  - require automated checks to pass before staging promotion
-  - require explicit approval before committing site structure or taxonomy changes
-- Compliance constraints:
-  - disallow actions likely to violate platform terms
-  - restrict automation to assistive mode where necessary
-- Content constraints:
-  - avoid repetitive spammy phrasing
-  - require inclusion of key disclaimers or booking details (optional templates)
-  - respond with a fixed out-of-scope message when intent is unsupported
-
-### Outputs
-
-- Allow, deny, or require approval
-- Provide reason codes to show in the UI
-
-------
-
-## 4.6 Background workers and Scheduler
-
-### Responsibilities
-
-- Run scheduled agent jobs (weekly recommendations, seasonal campaign planning)
-- Execute long-running pipelines (image tagging, derivative generation, site generation, automated checks, report generation)
-- Retry transient failures and record final outcomes
-
-### Recommended stack
-
-- MVP: APScheduler + DB-backed job table
-- Scale-up: Celery or RQ + Redis
-
-------
-
-## 4.7 Data storage
-
-### 4.7.1 Primary DB
-
-- MVP local: Postgres (local via Docker to match staging)
-- SQLite: allowed only for tests or lightweight prototypes
-
-Stores:
-
-- Contacts, inquiries, message threads
-- Shoots, expenses, categories
-- Business profile, site structure, and topic taxonomy
-- Website pages, templates, site versions, deployments
-- Conversational instructions, agent runs, and test results
-- Social drafts, schedules, results snapshots
-- Ads proposals, campaigns, spend snapshots
-- Approvals and audit events
-- Tool call logs (inputs, outputs, timestamps, correlation IDs)
-
-### 4.7.2 Photo storage
-
-- MVP: local filesystem managed by the app
-- Optional: MinIO for S3-like semantics locally
-
-Strategy:
-
-- Originals stored in a local library (e.g., `storage/library/originals/`) with stable asset IDs
-- Derived variants stored separately (e.g., `storage/library/derived/`) by ratio, size, and format
-- Common ratios for site assets: 3:2 (4x6), 5:7, 1:1, with focal points used for smart crops
-- DB stores tags (AI + manual), roles (hero_main, logo, showcase, gallery, social) with published flags, ratings, focal points, usage history, and derived variants
-- DB stores site placements and slot assignments for hero, logo, gallery, and showcase sections
-
-### 4.7.3 Vector store (semantic memory)
-
-Purpose:
-
-- Semantic retrieval for business profile notes, site structure context, brand voice, FAQs, journal notes, past campaigns.
-- Vector store is derived from canonical DB records and can be rebuilt.
-- Implementation: pgvector inside Postgres.
-- Embeddings are built on write to keep memory fresh; reassess cost/perf as data grows.
-
-------
-
-## 4.8 Integrations ("Connectors")
-
-### Connector approach
-
-- Connectors live behind the Tool Gateway
-- Each connector implements a stable internal contract
-
-Connectors:
-
-- Meta: Facebook Pages, Instagram, Meta Ads
-- Google Ads
-- Email: Gmail API or IMAP
-- Hosting deploy: SFTP or FTP
-
-Token handling:
-
-- OAuth tokens stored encrypted at rest
-- Health checks to detect expired tokens and permission loss
-
-------
-
-## 4.9 Playwright Assistive Automation
-
-Use case:
-
-- Only when APIs do not support desired workflows
-
-Rules:
-
-- Must be human-in-the-loop by default
-- Must capture screenshots and logs for debugging
-- Prefer open and prefill rather than fully click Post automation
-
-Isolation:
-
-- Separate worker container or process
-
-------
-
-## 5. Domain model (conceptual)
-
-### Core entities
-
-- Contact
-- Inquiry
-- Shoot
-- BusinessProfile
-- Asset (Photo)
-- AssetTag
-- TopicTag
-- AssetRole (with published state)
-- AssetVariant
-- SiteStructure
-- SiteTemplate
-- SiteVersion
-- SiteDeployment
-- SitePlacement
-- SiteChangeRequest
-- SiteTestRun
-- Conversation
-- ConversationMessage
-- AgentRun
-- WebsitePage
-- BlogPost
-- SocialPost
-- Campaign (Ads)
-- Expense
-- Approval
-- AuditEvent
-- ToolCallLog
-
-------
-
-## 6. Key workflows (agentic)
-
-### 6.1 Seasonal marketing campaign (agent-run)
-
-1. Brian sets budget, geo, and timeframe
-2. Agent proposes a plan:
-   - website updates
-   - post schedule
-   - optional boosts or ads
-   - optional community group drafts
-3. Policy engine flags which steps require approval
-4. Brian approves steps
-5. Agent executes via tools, logs outcomes, and reports results
-
-### 6.2 Inquiry intake to booking
-
-1. Inbound inquiry arrives (form or email)
-2. System creates Inquiry and links Contact
-3. Agent drafts reply and proposes next steps
-4. Brian approves send
-5. If booked:
-   - agent drafts proposal email
-   - creates Shoot record
-   - optionally triggers intake form
-
-### 6.3 Journal entry to content recommendations
-
-1. Brian logs a journal entry with selected photos
-2. System indexes notes and assets with embeddings on write
-3. Weekly agent job proposes:
-   - website refresh actions
-   - social post candidates
-   - blog topic candidates
-4. Brian approves and agent executes
-
-### 6.4 Site intake to taxonomy approval
-
-1. Brian selects "Build a new website" and provides business details
-2. System captures services, delivery method, pricing model, and subject focus
-3. System proposes site structure and topic taxonomy in structured + JSON form (see `docs/Site Intake Schema.md`)
-4. Brian requests changes or approves the proposal
-5. Approved structure and taxonomy are stored for tagging and generation
-
-### 6.5 Image upload to site generation
-
-1. Brian uploads images to the library
-2. AI tagging pipeline generates tags + confidence scores
-3. Brian reviews, edits tags, assigns roles (hero_main, logo, showcase, gallery)
-4. System generates a site draft from a selected template
-5. Brian assigns specific images to pages as needed; system fills gaps using star ratings
-6. Brian provides feedback via conversation; AI may ask clarifying questions
-7. Agent executes changes, runs automated checks, and records results
-8. Brian deploys to staging and reviews
-9. Brian promotes to business domain when ready
-
-------
-
-## 7. AI systems
-
-### 7.1 AI workloads (current)
-
-- Site intake assistant for business description, structure, and taxonomy proposal
-- Image auto-tagging (OpenAI vision) for topic taxonomy
-- Conversational site builder (planned) for template selection + content updates
-- Draft generation (planned) for captions, posts, and blog outlines
-
-### 7.2 Image tagging architecture
-
-- Input: selected asset(s) from the photo library
-- Pre-processing: generate a low-bandwidth derivative (JPEG, max width 512px)
-- Model call: OpenAI Responses API with strict JSON schema output
-- Output: topic tags + confidence + suggested tags
-- Storage:
-  - Tag assignments stored as `source=auto` with confidence
-  - Suggested tags queued as taxonomy candidates (pending approval)
-
-### 7.3 Job tracking and status
-
-- Auto-tag jobs tracked per asset with lifecycle: queued → running → completed/failed
-- UI shows job status summary and error messages for failed runs
-- Jobs are backgrounded to avoid blocking request/response flow
-
-### 7.4 Tag taxonomy governance
-
-- Approved taxonomy powers auto-placement rules on the site
-- Suggested tags require explicit approval before entering the taxonomy
-- Auto-inferred hierarchical tags may be created with an approval/revert option
-- Role assignment rules enforced (hero_main uniqueness, published constraints)
-
-### 7.5 Model and prompt versioning
-
-- OpenAI SDK pinned in `apps/api/requirements.txt` (see `docs/OpenAI API Spec Notes.md`)
-- Model name, prompt version, schema version stored in API settings
-- Changes require smoke tests on a single image before batch runs
-
-### 7.6 API compatibility checklist
-
-- Confirm model supports every parameter passed (e.g., some models reject `temperature`)
-- Use the correct API surface (Responses vs Chat Completions) for the model
-- Log response/parse errors and store failure reasons in job records
-- Keep CA bundle configuration for environments with SSL inspection
-
-### 7.7 Agentic execution model (agents + memory + tools)
-
-This system uses AI agents as orchestrators that plan tasks, retrieve context, and execute
-schema-validated tools under policy control. The agent does not directly mutate external
-systems; it must call tools through the Tool Gateway so actions are logged and governed.
-
-Core loop:
-
-1. **Intent + context**: user intent arrives (UI or API), and the agent retrieves memory
-   (business profile, site structure, topic taxonomy, prior runs) from the DB and pgvector.
-2. **Plan**: agent produces a stepwise plan with required tools and inputs.
-3. **Tool selection**: each step calls a tool with strict input/output schemas.
-4. **Policy enforcement**: policy engine returns allow/deny/require-approval before execution.
-5. **Execution + logging**: tool calls are executed, outputs recorded, and run/step logs updated.
-6. **Approval gating**: high-impact actions (deploy/publish/send/post) pause for explicit approval.
-7. **Outcome + memory update**: outcomes are stored, and relevant memory entries are updated.
-
-How it satisfies requirements:
-- **Site intake**: agents store the business profile, propose structure/taxonomy, and persist
-  approved versions. Semantic memory enables fuzzy retrieval across profile and structure.
-- **Tagging**: vision tagging is invoked as a tool; suggestions are queued for approval.
-- **Generation + deploy**: agents request generation, run checks, and only deploy when checks pass.
-
-Safety + auditability:
-- Every run has a stable ID with steps and tool calls persisted.
-- Approval requests and decisions are stored and linked to tool calls.
-- Checks are recorded as test runs; deploys record rollback targets.
-
-Implementation anchors (current):
-- Run logs: `AgentRun`, `AgentStep`, `ToolCallLog`.
-- Tool gateway: schema-validated tools with policy checks.
-- Memory: canonical SQL records + embeddings in pgvector.
-- Checks and deploys: `SiteTestRun` + `SiteDeployment`.
-
-------
-
-## 8. Security and reliability
-
-### Authentication and secrets
-
-- Local auth can run in single-user mode; hosted requires multi-tenant auth and tenant isolation.
-- Admin UI protected by basic auth on `/admin`
-- Encryption for tokens at rest
-- Never store raw credentials in logs
-- API keys stored via environment variables (local `.env`, hosted secrets)
-- OpenAI API key uses explicit env config with versioned model/prompt/schema settings
-- CI/CD uses Workload Identity Federation to avoid storing GCP service account keys in GitHub.
-
-### Spam protection
-
-- Honeypot field, rate limiting, optional CAPTCHA
-
-### Transport security
-
-- TLS verification enforced for external calls
-- Optional custom CA bundle support for local environments with SSL inspection (`BHP_OPENAI_CA_BUNDLE`)
-- Minimize data sent to external AI services by using resized image derivatives
-
-### Auditability
-
-- Persist approvals and audit events for:
-  - publish website
-  - send emails
-  - post to social
-  - launch ads
-  - Playwright runs (store screenshot artifacts)
-
-### Resilience
-
-- Idempotent jobs
-- Retries for transient connector failures
-- Catch-up for scheduled tasks after laptop sleep
-- Background jobs isolate long-running AI tasks from request/response latency
-
-------
-
-## 9. Deployment model (local-first)
-
-### 9.1 Local development (dev)
-
-- Primary workflow runs on a laptop.
-- UI and API run in separate terminals (`make ui`, `make api`).
-- Supporting services (Postgres with pgvector, Redis) run via Docker Compose (`make infra-up`).
-- UI env: `apps/ui/.env.local`
-- API env: repo root `.env` (loaded via `BHP_` prefix).
-- Photo storage lives in `storage/library/originals` and `storage/library/derived`.
-- Outbound TLS can use a custom CA bundle for local SSL inspection (`BHP_OPENAI_CA_BUNDLE`).
-
-```mermaid
-flowchart LR
-  Browser["Browser"] --> UI["Next.js dev server (localhost:3000)"]
-  UI --> API["FastAPI (localhost:8001)"]
-  API --> DB["Postgres (Docker)"]
-  API --> Storage["Local storage/"]
-  API --> OpenAI["OpenAI API"]
-```
-
-### 9.2 Current hosted wiring (staging / early POC)
-
-The current hosted setup is a staging deployment used to validate the wiring between UI, API, DB, and DNS for early POC/dev.
-
-```mermaid
-flowchart LR
-  Browser["Browser"] --> DNS["GoDaddy DNS: staging.brianhopkinsphoto.com"]
-  DNS --> Vercel["Vercel: Next.js UI (apps/ui)"]
-  Vercel --> Render["Render: FastAPI API (apps/api)"]
-  Render --> RenderDB["Render Postgres"]
-  Render --> OpenAI["OpenAI API"]
-
-  GitHub["GitHub: brianhopkins88/bhp-console"] --> Vercel
-  GitHub --> Render
-  DevSeed["Dev seed script"] --> Render
-```
-
-### 9.3 Hosted configuration details (current, early POC)
-
-- Git hosting: GitHub repo `brianhopkins88/bhp-console` with default branch `main`.
-- UI hosting: Vercel
-  - Root directory: `apps/ui`
-  - Framework preset: Next.js
-  - Environment variables:
-    - `NEXT_PUBLIC_API_BASE_URL=https://bhp-console.onrender.com`
-    - `ADMIN_BASIC_AUTH_USER`, `ADMIN_BASIC_AUTH_PASS`
-  - Domain: `staging.brianhopkinsphoto.com` (CNAME configured in GoDaddy)
-- API hosting: Render (Web Service)
-  - Root directory: `apps/api`
-  - Build command: `pip install -r requirements.txt`
-  - Start command: `./scripts/render_start.sh` (runs Alembic then starts Uvicorn)
-  - Environment variables:
-    - `BHP_CORS_ORIGINS=["https://staging.brianhopkinsphoto.com"]`
-    - `BHP_OPENAI_API_KEY` (set in Render secrets)
-    - `BHP_DATABASE_URL` and `DATABASE_URL`
-      - Must use `postgresql+psycopg://` scheme to avoid psycopg2 import errors.
-  - Health check: `https://bhp-console.onrender.com/api/v1/health`
-  - Free tier note: instances can spin down and cold start on first request
-- Database: Render Postgres (staging)
-  - Name: `bhp-console-db`
-  - ID: `dpg-d55uuiq4d50c73dmmjmg-a`
-  - Host: `dpg-d55uuiq4d50c73dmmjmg-a.oregon-postgres.render.com`
-  - Port: `5432`
-  - User: `bhp_console_db_user`
-  - Database: `bhp_console_db`
-  - External URL: set as a secret env var in Render (do not commit credentials)
-  - Expiration warning: free tier expires on January 23, 2026 unless upgraded.
-  - Scaling: move to a paid tier as data volume and job load increase.
-- Storage: API writes to the service filesystem.
-  - For durable staging storage, attach a Render disk or move to object storage (S3/MinIO).
-- DNS: GoDaddy manages the root domain; staging uses a CNAME to Vercel.
-
-### 9.4 Sync, migrations, and CI/CD workflow
-
-Near-term (early POC): stay on Vercel + Render for lowest management overhead and cost.
-
-Target future state (scaling): move API + DB + storage to GCP, with two UI options:
-- Option A: keep UI on Vercel and point to GCP API.
-- Option B: move UI to GCP (Cloud Run for SSR or Cloud Storage + CDN for static).
-
-Planned hosted CI/CD (GCP): GitHub Actions is the chosen pipeline runner.
-- On push to `main`, build artifacts (API container, UI container or static export).
-- Run API migrations as a dedicated step or job before deploy.
-- Deploy API to Cloud Run and UI to Cloud Run (SSR) or Cloud Storage + CDN (static).
-- Record deploy metadata for staging/prod promotion and rollback.
-- GitHub Actions authenticates to GCP via Workload Identity Federation (no long-lived service account keys).
-- Container images are stored in a private Artifact Registry repository.
-
-Current hosted wiring (Render/Vercel):
-
-- Code sync:
-  - Push to GitHub -> Vercel/Render auto-deploy from `main`.
-- Schema sync:
-  - `./scripts/render_start.sh` runs `alembic upgrade head` on every Render deploy.
-  - Requires `BHP_DATABASE_URL` or `DATABASE_URL` set in Render.
-  - Local dev runs Alembic manually during development.
-- Optional seed (dev -> staging):
-  - Script: `apps/api/scripts/seed_staging_uploads.py`
-  - Make target: `BHP_SEED_UPLOAD_DIR=/path/to/originals make seed-staging`
-  - Uses the staging API to upload assets and trigger derivative generation.
-  - Uses CA bundle if needed: `BHP_CA_BUNDLE`, `SSL_CERT_FILE`, or `REQUESTS_CA_BUNDLE`.
-  - Seed adds data; to overwrite staging completely, wipe staging DB/storage first.
-- Optional hook:
-  - `scripts/hooks/post-push` can run the seed script after `git push` (dev-only).
-
-### 9.5 Docker Compose (recommended)
-
-Containers:
-
-- ui (Next.js)
-- api (FastAPI)
-- worker (jobs and agent sessions)
-- db (Postgres with pgvector extension)
-- redis (if using Celery or RQ)
-- minio (optional)
-- playwright-runner (optional)
-
-------
-
-## 10. Technology choices (recommended defaults)
-
-### MVP defaults
-
-- UI: Next.js
-- API: FastAPI
-- DB: Postgres for authoritative records in dev/staging (SQLite only for tests)
-- Jobs: APScheduler, then Celery or RQ with Redis
-- Storage: filesystem, optional MinIO
-- Vector: pgvector for semantic memory (DB remains the system of record)
-- Agents: OpenAI-first with structured tool calling and schema validation
-
-------
-
-## 11. Migration plan (Epic 0)
-
-Detailed backlog: `docs/Epic 0 Migration Backlog.md`.
-
-### Phase 1: Architecture assessment
-
-- Inventory current modules and map them to target boundaries (domain, agents, tools, policy, jobs, UI).
-- Identify missing components for agent runtime, tool gateway, and policy enforcement.
-- Document gaps and migration order with dependencies and risks.
-- Validate migration steps against the current hosted setup (Render API + Postgres, Vercel UI).
-
-### Phase 2: Structural refactor
-
-- Establish package boundaries for agent runtime, tools, policy, and jobs.
-- Move existing functionality behind schemas and tool interfaces.
-- Add run logging and correlation IDs for agent actions and tool calls.
-
-### Phase 3: Memory + safety foundation
-
-- Add durable storage for business profile, site structure, and topic taxonomy.
-- Add retrieval patterns for agents to use this context consistently.
-- Enforce approval gates for structure/taxonomy changes and out-of-scope intent responses.
-- Provision pgvector in dev and staging and wire retrieval to agents.
-
-### Phase 4: Operational readiness
-
-- Wire automated checks into site change requests and staging deploys.
-- Capture deployment metadata and rollback targets.
-- Validate staged deploys through the agent-run pipeline.
-
-------
-
-## 12. Roadmap mapping
-
-### MVP
-
-- Architecture migration for agent runtime, tool gateway, and memory
-- Site intake conversation + site structure and taxonomy approval
-- AI image classification pipeline
-- Photo import, tagging, role management, derivative generation
-- Role-driven website generation and iterative AI feedback
-- Staging deploy and preview workflow
-- Website generator, preview, deploy (baseline)
-- Social drafts and scheduling queue (manual publish first)
-- Contact form intake, inquiry list, alerts, draft replies
-- Shoots and expenses registry, annual export
-
-### V1
-
-- Journal, weekly recommendations
-- SEO helpers and image optimization
-- Client intake form and richer CRM history
-- Lightweight insights summaries
-
-### V2+
-
-- Paid ads planning and campaign creation via APIs
-- Assistive group posting with rules
-- Automated anomaly alerts for spend and performance
-
-## 13. Appendix: Suggested repo structure
-
-```
-bhp-console/
-  apps/
-    ui/                   # Next.js
-    api/                  # FastAPI
-  packages/
-    domain/               # Pydantic schemas, domain logic
-    agents/               # agent runtime, role prompts, orchestration
-    tools/                # tool gateway + schemas
-    connectors/           # meta, google, email, hosting
-    policy/               # approvals, budgets, compliance rules
-    jobs/                 # schedules, workers, pipelines
-  infra/
-    docker-compose.yml
-    migrations/
-  storage/
-    library/
-      originals/          # source files (not in git)
-      derived/            # optimized variants (ratios, sizes, formats)
-  docs/
-    architecture.md
-```
-
-## 14. Appendix: Architecture decisions (Epic 0 session)
-
-### D1: Vector store choice (pgvector)
-
-- Decision: Use pgvector in Postgres as the semantic memory store (dev uses `pgvector/pgvector:pg16`, staging uses `CREATE EXTENSION vector` on Render Postgres).
-- Tradeoffs:
-  - Pros: single database, fewer services, easy backup/restore, consistent with canonical records.
-  - Cons: lower vector search performance at scale vs specialized vector DBs; index tuning required.
-- Scaling impact:
-  - Good for MVP and early growth.
-  - If vector workload grows significantly, consider moving embeddings to a dedicated vector service (Qdrant or similar) and keep Postgres as the system of record.
-
-### D2: Semantic memory scope for site intake
-
-- Decision: Embed business profile, site structure, and topic taxonomy content on write and store in `memory_embeddings`.
-- Tradeoffs:
-  - Pros: agents can perform fuzzy retrieval across profile/structure/taxonomy without bespoke SQL rules.
-  - Cons: duplicated data, embedding cost/latency on writes, and potential noise from embedding full JSON payloads.
-- Scaling impact:
-  - Storage grows with each approved structure/taxonomy version; consider summarization or pruning old versions if size or cost becomes an issue.
-  - If embeddings become too noisy, narrow to summaries or page descriptions only.
-
-### D3: Embedding model and dimensions
-
-- Decision: Use OpenAI `text-embedding-3-small` with 1536 dimensions.
-- Tradeoffs:
-  - Pros: cost-effective and fast; stable dimensionality for pgvector schema.
-  - Cons: lower recall vs larger embedding models in some cases.
-- Scaling impact:
-  - Changing embedding model/dimensions requires rebuilding embeddings and reindexing.
-
-### D4: Agent run tracking and approval log (MVP)
-
-- Decision: Persist AgentRun, AgentStep, ToolCallLog, and Approval records for auditability and safety.
-- Tradeoffs:
-  - Pros: traceable runs and tool usage; explicit approval history.
-  - Cons: extra write volume and schema complexity.
-- Scaling impact:
-  - Log growth requires retention policies, indexes, or archiving as run volume increases.
-
-### D5: Modular monolith boundaries
-
-- Decision: Keep a modular monolith with explicit package boundaries for domain, agents, tools, policy, jobs, and connectors.
-- Tradeoffs:
-  - Pros: clear interfaces and safer refactors without service sprawl.
-  - Cons: some overhead in maintaining boundaries and cross-package imports.
-- Scaling impact:
-  - Enables later service extraction with minimal rework.
+  
+    ## 5. Canonical Domain Model
+  
+    ### 5.1 Versioned Canonical Entities (Required)
+  
+    - **BusinessProfileVersion**
+    - **SiteStructureVersion**
+    - **PageConfigVersion**
+  
+    Each version includes:
+  
+    - `id`
+    - `parent_version_id`
+    - `created_by` (user | agent | job)
+    - `source_run_id`
+    - `commit_classification`
+    - `created_at`
+    - `status` (draft | approved | published)
+  
+    ------
+  
+    ### 5.2 Conditional Versioning: Taxonomy
+  
+    - Default: canonical but unversioned
+    - Versioned only during **site structure generation**
+  
+    Supporting entities:
+  
+    - `Tag` (stable ID)
+    - `TagAlias` (old → new)
+    - `TaxonomySnapshot`
+  
+    **Tag renames**
+  
+    - Alias-preserving
+    - Never destructive
+    - Old names remain resolvable
+  
+    ------
+  
+    ### 5.3 Derived (Non-Canonical) Entities
+  
+    - `BuildArtifact`
+    - `RunLedgerEntry`
+    - `ArtifactImportJob`
+  
+    ------
+  
+    ## 6. Determinism Contract
+  
+### 6.1 Deterministic on Replay
+
+- PageConfig JSON
+- SiteStructure JSON
+- Asset selection state:
+  - Locked slots (Hero image, base Logo)
+  - Explicit picks (galleries, structure-referenced assets)
+  - Tag-based selection rules + TaxonomySnapshot
+
+### 6.2 Non-Deterministic
+  
+    - Rendered HTML/CSS
+    - Copy variants (unless locked)
+  
+### 6.3 Asset Slot Semantics
+
+- **Locked**: must replay identically (default: Hero image and base Logo)
+- **Refreshable**: may reselect on regen using stored rules and TaxonomySnapshot
+  
+    ### 6.4 Missing Assets
+  
+    - Graceful substitution
+    - Best-fit replacement
+    - Logged, never fatal
+  
+    ------
+  
+    ## 7. Policy and Invariants
+  
+### 7.1 Commit Classification
+
+- `safe_auto_commit` (spelling/grammar corrections only)
+- `approval_required` (all other canonical changes)
+  
+    ### 7.2 Invariant Categories
+  
+    - Brand (logo, hero)
+    - Structure (required pages)
+    - Content (no placeholders on publish)
+    - Assets (derivatives exist, locked preserved)
+    - SEO (alt text, meta descriptions)
+  
+    ------
+  
+    ## 8. User Interaction Modes
+  
+    ### Conversational Mode
+  
+    - Intent-driven requests
+    - Agent proposals
+    - Preview and approve
+  
+    ### Advanced Mode
+  
+    - Structured canonical editing only
+    - No HTML/CSS editing
+    - Schema + policy validated
+  
+    ------
+  
+    ## 9. Core Workflows
+  
+    ### 9.1 Epic 0 – Import Polished Draft
+  
+    ```
+    Artifact Bundle + Metadata
+            |
+    [ Canonicalizer Service ]
+            |
+    Canonical Versions Created
+            |
+    Baseline Canonical State
+    ```
+  
+    Artifacts are no longer authoritative after import.
+  
+    ------
+  
+    ### 9.2 Page-Level Regeneration (Epic 2)
+  
+    ```
+    Select Page
+       |
+    Agent Proposes Regen
+       |
+    Deterministic Canonical Output
+       |
+    Preview Artifact
+       |
+    Diff + Policy Check
+       |
+    Auto-Commit or Approval
+    ```
+  
+    ------
+  
+    ### 9.3 Publishing (Epic 3)
+  
+    ```
+    Validate Canonical State
+       |
+    Build Immutable Artifact
+       |
+    Stage
+       |
+    Publish
+       |
+    Record Rollback Target
+    ```
+  
+    Rollback uses prior artifact + invariant validation.
+  
+    ------
+  
+## 10. AI and Agent Architecture
+
+- Model and prompt pinning per run
+- Determinism enforced at canonical layer
+- External tool outputs snapshotted
+- Run ledger stores prompts/responses and model outputs verbatim to support replay and preview caching
+- All writes via Tool Gateway + Policy Engine
+  
+    ------
+  
+## 11. Security, Reliability, and Observability
+
+- Full audit trail
+- Regeneration diagnostics surfaced in UI
+- Partial success allowed with warnings
+- Canonical + artifact export guaranteed
+- Authentication and credential security:
+  - Users stored in DB with salted password hashes (Argon2id/bcrypt)
+  - Session tokens are random, stored as SHA-256 hashes, and rotated on login
+  - Sessions include expiry, revoke, and last-seen timestamps
+  - Admin endpoints require an authenticated session or explicit approval workflow
+  - HTTPS enforced; cookies use HttpOnly + Secure + SameSite policy
+  - Secrets managed via env/secret store; never committed to repo
+
+    ------
+  
+    ## 12. Deployment Model
+  
+    - Local-first execution
+    - Optional cloud connectors
+    - Immutable artifacts
+    - Append-only canonical store
+  
+    ------
+  
+    ## 13. Technology Architecture
+  
+    ### 13.1 Runtime
+  
+    - Python-based application runtime
+    - Local execution by default
+    - Optional hosted deployment
+  
+    ### 13.2 Storage
+  
+    - Canonical state:
+      - Structured JSON
+      - SQLite/Postgres-class backing
+      - Shared multi-tenant database with strict tenant scoping (no per-tenant isolation yet)
+    - Artifact store:
+      - File system or object storage
+    - Vector store:
+      - Retrieval and reasoning only
+      - Explicitly non-canonical
+      - Incremental updates with full recompute triggers on schema or prompt changes
+  
+    ### 13.3 AI Integration
+  
+    - OpenAI APIs via adapters pinned to stable versions
+    - Model versions recorded per run
+    - No model output authoritative without commit
+  
+    ### 13.4 External Integrations
+  
+    - Hosting providers
+    - Image processing tools
+    - Publishing targets
+      (All accessed only via Tool Gateway)
+  
+    ------
+  
+    ## 14. Application Architecture Diagram (Deployment-Oriented)
+  
+    ```
+    +----------------------------------------------------+
+    |                    Web Browser                     |
+    |                                                    |
+    |  Conversational UI  |  Advanced Structured UI      |
+    +----------------------+-----------------------------+
+                           |
+                           v
+    +----------------------------------------------------+
+    |                  API Server                        |
+    |                                                    |
+    |  Versioning | Workflow | Provenance                |
+    |                                                    |
+    |     +------------------------------+               |
+    |     | Policy & Invariants Engine   |               |
+    |     +------------------------------+               |
+    +----------------------+-----------------------------+
+                           |
+            +--------------+--------------+
+            |                             |
+            v                             v
+    +---------------+           +----------------------+
+    | Canonical     |           | Derived Artifact     |
+    | Versioned     |           | Store                |
+    | Store         |           | (HTML/CSS/assets)    |
+    +---------------+           +----------------------+
+    
+            ^
+            |
+    +----------------------+
+    |   Agent Runtime      |
+    |  Stateless runs      |
+    |  Run ledger          |
+    +----------+-----------+
+               |
+               v
+    +----------------------+
+    |    Tool Gateway      |
+    +----------+-----------+
+               |
+               v
+    +----------------------+
+    | External Systems     |
+    +----------------------+
+    ```
+  
+    **Diagram invariants**
+  
+    - No backdoor writes
+    - Agents never mutate state directly
+    - Artifacts always derived
+    - External systems isolated
+  
+    ------
+  
+    ## 15. Forward-Looking Roadmap (Epic 4+)
+  
+    ### Epic 4 – Multi-Surface Brand Generation
+  
+    - Landing pages
+    - Print layouts
+    - Social assets
+  
+    ### Epic 5 – Marketing Campaigns
+  
+    - Campaign canonical objects
+    - Variant regeneration
+    - External publishing
+  
+    ### Epic 6 – Client & Project Management
+  
+    - Client profiles
+    - Approval workflows
+    - Client-specific variants
+  
+    ### Epic 7 – Monetization & Commerce
+  
+    - Packages and pricing
+    - Licensing metadata
+    - Fulfillment integration
+  
+    ### Epic 8 – Optimization & Insights
+  
+    - Variant comparison
+    - Explainable recommendations
+    - Canonical evolution analysis
+  
+    ------
+  
+    ## 16. Mermaid Diagrams (Architecture Overview)
+
+    Render this Mermaid script in a Markdown viewer that supports Mermaid.
+
+    ```mermaid
+    flowchart LR
+      subgraph UI["Admin Console (Next.js)"]
+        UIAdmin[Admin UI]
+      end
+
+      subgraph API["API (FastAPI)"]
+        APIRouter[API Router]
+        Tools[Tool Gateway]
+        Policy[Policy Engine]
+        Auth[Auth + Sessions]
+      end
+
+      subgraph Domain["Domain Packages"]
+        Canonical[Canonical Versions]
+        Intake[Site Intake State]
+        Memory[Semantic Memory (pgvector)]
+      end
+
+      subgraph Data["Postgres"]
+        DB[(Postgres + pgvector)]
+      end
+
+      UIAdmin --> APIRouter
+      APIRouter --> Auth
+      APIRouter --> Tools
+      Tools --> Policy
+      Tools --> Canonical
+      APIRouter --> Intake
+      APIRouter --> Memory
+      Canonical --> DB
+      Intake --> DB
+      Memory --> DB
+    ```
+
+    ------
+
+    ## 17. Architectural Closure Statement
+  
+    This architecture **over-specifies correctness, determinism, and governance** while **under-specifying presentation and vendors**, enabling long-term evolution without re-architecture.
+  
+    Epics 0–3 can be implemented confidently without constraining future expansion.
+  
+    ------
+  
+    If you want next, I can:
+  
+    - Lock this as **Architecture v1.1 (Final)**
+    - Expand the **Mermaid diagrams** into full architectural views
+    - Generate an **Epic-by-Epic build plan with guardrails**
+    - Create **schemas and API contracts for Epic 0**
+  
+    You now have a **complete, audited, future-proof architecture document**.

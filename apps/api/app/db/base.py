@@ -1,5 +1,5 @@
-from sqlalchemy.orm import DeclarativeBase
+"""Compatibility shim for legacy imports (moved to packages.domain)."""
 
+from packages.domain.db.base import Base
 
-class Base(DeclarativeBase):
-    pass
+__all__ = ["Base"]

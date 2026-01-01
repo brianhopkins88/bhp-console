@@ -7,8 +7,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
-from app.models.agent_runs import AgentRun, AgentStep, ToolCallLog
-from app.schemas.agent_runs import (
+from packages.domain.models.agent_runs import AgentRun, AgentStep, ToolCallLog
+from packages.domain.schemas.agent_runs import (
     AgentRunCreate,
     AgentRunOut,
     AgentRunUpdate,

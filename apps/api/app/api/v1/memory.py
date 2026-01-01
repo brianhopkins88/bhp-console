@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
-from app.schemas.memory import MemorySearchRequest, MemorySearchResult
+from packages.domain.schemas.memory import MemorySearchRequest, MemorySearchResult
 from app.services.memory import search_memory
 
 router = APIRouter()

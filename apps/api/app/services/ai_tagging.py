@@ -15,7 +15,7 @@ from sqlalchemy import delete, select
 
 from app.core.settings import settings
 from app.db.session import SessionLocal
-from app.models.assets import Asset, AssetAutoTagJob, AssetTag, TagTaxonomy
+from packages.domain.models.assets import Asset, AssetAutoTagJob, AssetTag, TagTaxonomy
 from app.services.openai_usage import increment_usage
 
 logger = logging.getLogger(__name__)

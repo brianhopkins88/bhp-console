@@ -6,7 +6,7 @@ from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
-from app.models.memory import MemoryEmbedding
+from packages.domain.models.memory import MemoryEmbedding
 from app.services.embeddings import embed_text
 
 logger = logging.getLogger(__name__)

@@ -1,1 +1,1 @@
-"""SQLAlchemy models package."""
+"""Deprecated: models moved to packages.domain.models."""

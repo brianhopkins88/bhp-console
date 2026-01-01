@@ -7,7 +7,7 @@ from sqlalchemy import delete, select
 
 from app.core.settings import settings
 from app.db.session import SessionLocal
-from app.models.assets import Asset, AssetVariant
+from packages.domain.models.assets import Asset, AssetVariant
 from app.services.assets import generate_variants
 
 

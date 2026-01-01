@@ -11,18 +11,20 @@ from sqlalchemy.orm import Session
 from app.api.deps import require_api_auth
 from app.core.settings import settings
 from app.db.session import get_db
-from app.models.agent_runs import AgentRun, AgentStep, ToolCallLog
-from app.models.approvals import Approval
-from app.models.site_ops import SiteDeployment, SiteTestRun
-from app.schemas.tools import ToolExecuteRequest, ToolExecuteResponse
+from packages.domain.models.agent_runs import AgentRun, AgentStep, ToolCallLog
+from packages.domain.models.approvals import Approval
+from packages.domain.models.site_ops import SiteDeployment, SiteTestRun
+from packages.domain.schemas.tools import ToolExecuteRequest, ToolExecuteResponse
 from packages.policy.engine import PolicyEngine
 from packages.tools.builtins import register_builtin_tools
+from packages.tools.canonical import register_canonical_tools
 from packages.tools.registry import ToolContext, ToolRegistry, ToolSpec
 
 router = APIRouter(dependencies=[Depends(require_api_auth)])
 
 _registry = ToolRegistry()
 register_builtin_tools(_registry)
+register_canonical_tools(_registry)
 _policy_engine = PolicyEngine()
 
 
@@ -164,6 +166,10 @@ def _get_step_or_404(db: Session, step_id: int) -> AgentStep:
     return step
 
 
+def _serialize_tool_output(output: BaseModel) -> dict:
+    return output.model_dump(mode="json")
+
+
 @router.post("/tools/execute", response_model=ToolExecuteResponse)
 def execute_tool(payload: ToolExecuteRequest, db: Session = Depends(get_db)) -> ToolExecuteResponse:
     _get_run_or_404(db, payload.run_id)
@@ -250,7 +256,7 @@ def execute_tool(payload: ToolExecuteRequest, db: Session = Depends(get_db)) -> 
                     detail="Checks must pass before staging deploy.",
                 )
 
-    decision = _policy_engine.evaluate(tool, context)
+    decision = _policy_engine.evaluate(tool, context, payload=validated_input)
     if decision.denied:
         tool_call.status = "denied"
         tool_call.error_message = decision.reason
@@ -281,7 +287,7 @@ def execute_tool(payload: ToolExecuteRequest, db: Session = Depends(get_db)) -> 
     try:
         output = tool.handler(validated_input, context)
         validated_output = tool.output_model.model_validate(output)
-        tool_call.output = validated_output.model_dump()
+        tool_call.output = _serialize_tool_output(validated_output)
         tool_call.status = "completed"
     except ValidationError as exc:
         tool_call.status = "failed"

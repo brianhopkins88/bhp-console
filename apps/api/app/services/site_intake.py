@@ -4,7 +4,7 @@ from copy import deepcopy
 from datetime import datetime, timezone
 import re
 
-from app.models.assets import TagTaxonomy
+from packages.domain.models.assets import TagTaxonomy
 
 
 BASE_PAGES = [
