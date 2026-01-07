@@ -74,6 +74,7 @@ class TopicTaxonomyCreate(BaseModel):
     force_new: bool | None = None
     created_by: str | None = None
     source_run_id: str | None = None
+    commit_classification: str | None = None
 
 
 class TopicTaxonomyOut(BaseModel):
@@ -105,6 +106,7 @@ class TopicTaxonomyRestoreRequest(BaseModel):
     force_new: bool | None = None
     created_by: str | None = None
     source_run_id: str | None = None
+    commit_classification: str | None = None
 
 
 class BusinessProfileInput(BaseModel):

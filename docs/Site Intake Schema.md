@@ -1,7 +1,12 @@
 # Site Intake JSON Schema
+**Normative Reference:** Vision/Architecture v0.13.
 
 This schema defines the structured output produced by the site intake flow.
 It is used by the UI for review and by agents for downstream generation.
+
+Aligned to Vision/Architecture v0.13: `topic_taxonomy` represents the **single user-visible
+taxonomy**. Asset metadata and tag assignments are captured in canonical asset records;
+reserved tag invariants are enforced by policy.
 
 ## JSON Schema (Draft 2020-12)
 
@@ -49,6 +54,18 @@ It is used by the UI for review and by agents for downstream generation.
         "target_audience": { "type": "string", "maxLength": 200 },
         "brand_voice": { "type": "string", "maxLength": 200 },
         "notes": { "type": "string", "maxLength": 4000 }
+      }
+    },
+    "intake_context": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "existing_site_url": { "type": ["string", "null"], "format": "uri", "maxLength": 2048 },
+        "crawl_status": {
+          "type": "string",
+          "enum": ["not_requested", "queued", "running", "completed", "failed"]
+        },
+        "crawl_snapshot_id": { "type": ["string", "null"], "maxLength": 120 }
       }
     },
     "site_structure": {
@@ -128,6 +145,8 @@ It is used by the UI for review and by agents for downstream generation.
 - `site_structure.pages[].order` is zero-based within a parent group.
 - `topic_taxonomy.tags[].id` must be unique.
 - `topic_taxonomy.tags[].parent_id` must refer to an existing tag id or be null.
+- `topic_taxonomy.tags[].id` must include reserved tags: `hero`, `logo`, `photographer`, `owner`.
+- Reserved tag **assignments** are enforced on asset metadata (outside this schema).
 
 ## Minimal example
 
@@ -139,6 +158,11 @@ It is used by the UI for review and by agents for downstream generation.
     "pricing_models": ["package"],
     "subjects": ["family", "portraits"],
     "location": "Bend, OR"
+  },
+  "intake_context": {
+    "existing_site_url": "https://example.com",
+    "crawl_status": "completed",
+    "crawl_snapshot_id": "crawl-2025-01-01"
   },
   "site_structure": {
     "pages": [
@@ -168,12 +192,16 @@ It is used by the UI for review and by agents for downstream generation.
   },
   "topic_taxonomy": {
     "tags": [
+      { "id": "hero", "label": "Hero", "parent_id": null },
+      { "id": "logo", "label": "Logo", "parent_id": null },
+      { "id": "photographer", "label": "Photographer", "parent_id": null },
+      { "id": "owner", "label": "Owner", "parent_id": null },
       { "id": "family", "label": "Family", "parent_id": null },
       { "id": "portraits", "label": "Portraits", "parent_id": null }
     ]
   },
   "metadata": {
-    "schema_version": "1.0",
+    "schema_version": "1.1",
     "generated_at": "2025-01-01T12:00:00Z"
   }
 }

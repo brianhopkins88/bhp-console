@@ -1,4 +1,5 @@
 # Epic 0 Architecture Inventory and Gap Analysis
+**Normative Reference:** Vision/Architecture v0.13.
 
 > NOTE: Archived first-pass Epic 0 document. Superseded by `docs/BHP Management Console Architecture.md` and `docs/BHP Management Console Vision.md`. This file is retained for historical context and is not maintained during the Epic 0 refactor.
 

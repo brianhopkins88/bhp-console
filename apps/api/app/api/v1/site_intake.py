@@ -45,6 +45,13 @@ logger = logging.getLogger(__name__)
 MAX_INTAKE_VERSIONS = 3
 
 
+def _reject_canonical_write() -> None:
+    raise HTTPException(
+        status_code=409,
+        detail="Canonical writes must be executed via the tool gateway (POST /api/v1/tools/execute).",
+    )
+
+
 def _resolve_latest_taxonomy(db: Session) -> TopicTaxonomy | None:
     latest_approved = _latest_record(db, TopicTaxonomy, status="approved")
     if latest_approved:
@@ -132,6 +139,7 @@ def create_business_profile(
     approval_id: int | None = None,
     db: Session = Depends(get_db),
 ) -> BusinessProfileVersion:
+    _reject_canonical_write()
     status = payload.status or "draft"
     commit_classification = payload.commit_classification or "approval_required"
     require_commit_approval(
@@ -219,6 +227,7 @@ def create_site_structure(
     approval_id: int | None = None,
     db: Session = Depends(get_db),
 ) -> SiteStructureVersion:
+    _reject_canonical_write()
     status = payload.status or "draft"
     commit_classification = payload.commit_classification or "approval_required"
     require_commit_approval(
@@ -313,6 +322,7 @@ def create_topic_taxonomy(
     payload: TopicTaxonomyCreate,
     db: Session = Depends(get_db),
 ) -> TopicTaxonomy:
+    _reject_canonical_write()
     status = payload.status or "draft"
     approved_at = datetime.now(timezone.utc) if status == "approved" else None
     taxonomy: TopicTaxonomy | None = None
@@ -390,6 +400,7 @@ def restore_taxonomy(
     payload: TopicTaxonomyRestoreRequest,
     db: Session = Depends(get_db),
 ) -> TopicTaxonomy:
+    _reject_canonical_write()
     change = db.get(TopicTaxonomyChange, payload.change_id)
     if not change:
         raise HTTPException(status_code=404, detail="Taxonomy change not found")
@@ -463,6 +474,7 @@ def approve_site_intake(
     payload: SiteIntakeApproveRequest,
     db: Session = Depends(get_db),
 ) -> dict:
+    _reject_canonical_write()
     profile_data = payload.business_profile.model_dump()
     business_profile = BusinessProfileVersion(
         parent_version_id=_resolve_business_profile_version_id(db, None),

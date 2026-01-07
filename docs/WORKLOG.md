@@ -1,4 +1,5 @@
 # Work Log
+**Normative Reference:** Vision/Architecture v0.13.
 
 ## YYYY-MM-DD
 - What I worked on:

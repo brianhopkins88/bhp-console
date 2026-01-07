@@ -1,6 +1,7 @@
 # AI Tagging and Taxonomy
+**Normative Reference:** Vision/Architecture v0.13.
 
-## Architecture-Aligned Specification
+## Architecture-Aligned Specification (v0.13)
 
 ------
 
@@ -13,6 +14,7 @@ Its goals are to:
 - Enrich assets with **semantic metadata**
 - Support **agent reasoning and proposal generation**
 - Enable **consistent, explainable site assembly**
+- Maintain a **single user-visible taxonomy** with **reserved tag invariants**
 - Remain fully compatible with:
   - Canonical-first architecture
   - Deterministic regeneration rules
@@ -113,196 +115,56 @@ POST /api/v1/assets/{asset_id}/auto-tag
 
 ------
 
-## 5. Taxonomy Philosophy
+## 5. Taxonomy Principles (v0.13)
 
-### 5.1 Taxonomy is a pattern, not a canon
+### 5.1 Single user-visible taxonomy
 
-- This document defines a **structural framework**
-- Example tags are illustrative only
-- The AI must generate a **business-specific taxonomy** derived from:
-  - Business profile
-  - Services
-  - Target audience
-  - Intended site structure
+- There is one global tag list per business.
+- Tags are not namespaced (avoid `Role.*`, `Service.*`, `Site.*`).
+- Tags can represent services, subjects, style, location, or usage context, but they live in the same list.
+- Reserved tags must exist: `hero`, `logo`, `photographer`, `owner`.
 
 ### 5.2 Global, not page-scoped
 
-- Taxonomy is **global per business**
-- Pages do **not** own tags
+- Taxonomy is **global per business**.
+- Pages do **not** own tags.
 - Pages reference assets via:
   - Page configuration
   - Explicit asset slots
   - Selection rules
-- Selection rules must reference a `TaxonomySnapshot` for deterministic replay
+- Selection rules must reference a `TaxonomySnapshot` for deterministic replay.
 
-No page-scoped taxonomy exists.
+### 5.3 Reserved tags and invariants
 
-------
-
-## 6. Core Taxonomy Dimensions (Conceptual)
-
-These dimensions exist conceptually in all taxonomies, but **names, depth, and presence vary by business**.
+- Reserved tags cannot be deleted.
+- At least one asset must be tagged with each reserved tag before staging builds.
+- Reserved tags are enforced by policy, not by agents.
 
 ------
 
-## 6.1 Role (Suitability Heuristics)
+## 6. Tagging guidance (single taxonomy)
 
-### Intent
+### 6.1 What to tag
 
-Expresses **how suitable an image is** for different visual prominence levels.
+- Revenue services (what the business sells)
+- Subjects and genres (what is depicted)
+- Style and mood (how it looks)
+- Location or setting (when relevant)
+- Usage intent (blog, social) only when explicitly part of the business plan
 
-### Example roles (illustrative)
+### 6.2 Tag format
 
-- `Role.Hero`
-- `Role.Feature`
-- `Role.Support`
+- Tag IDs should be short, lowercase slugs (labels can be human-friendly).
+- Prefer nouns or short phrases; avoid long sentences.
+- Do not use dotted namespaces or category prefixes.
 
-### Architectural clarification
+### 6.3 Illustrative examples
 
-- Role tags are **heuristics only**
-- They:
-  - Inform agent reasoning
-  - Suggest candidate assets
-- They **do not**:
-  - Control placement
-  - Override deterministic asset slots
-
-Final placement is governed exclusively by `PageConfigVersion`.
-
-------
-
-## 6.2 Service (Revenue Alignment)
-
-### Intent
-
-Connects images to **how the business makes money**.
-
-### Example pattern
-
-```
-Service.<PrimaryOffering>[.<Qualifier>]
-```
-
-### Illustrative examples
-
-- `Service.Family`
-- `Service.Portrait.Professional`
-- `Service.SmallBusiness.Branding`
-- `Service.WildlifePrints`
-- `Service.Events`
-
-### Guidance
-
-- Derived directly from the business profile
-- Avoid creating service tags for purely hobby work unless requested
-
-------
-
-## 6.3 Site (Structural Assets and Hints)
-
-### Intent
-
-Distinguishes **site mechanics** from content imagery.
-
-#### 6.3.1 Logos and icons (canonical)
-
-- `Site.Logo.Primary`
-- `Site.Logo.Icon`
-- `Site.Icon.Navigation`
-- `Site.Icon.Social`
-
-These may be referenced by **explicit asset slots**.
-
-------
-
-### 6.3.2 Page identifiers (inference-only)
-
-Examples:
-
-- `Site.Page.Home`
-- `Site.Page.About`
-- `Site.Page.Services.<ServiceName>`
-
-### Important rule
-
-`Site.Page.*` identifiers are **inference-time hints only**.
-
-They:
-
-- May guide initial site structure proposals
-- Are **not persisted as canonical taxonomy tags**
-- Are replaced by:
-  - `SiteStructureVersion`
-  - `PageConfigVersion`
-
-------
-
-## 6.4 Site.Gallery (Portfolio Organization)
-
-### Intent
-
-Supports gallery grouping and navigation.
-
-### Example pattern
-
-```
-Site.Gallery.<ThemeOrService>
-```
-
-### Illustrative examples
-
-- `Site.Gallery.Family`
-- `Site.Gallery.Portrait`
-- `Site.Gallery.Wildlife`
-- `Site.Gallery.Travel`
-
-### Guidance
-
-- Galleries may align with:
-  - Services
-  - Topics
-  - Or both
-- Small sites may have very few galleries
-
-------
-
-## 6.5 Social (Outbound Usage)
-
-### Intent
-
-Controls reuse across marketing channels.
-
-### Examples
-
-- `Social.Blog`
-- `Social.Post`
-- `Social.Email`
-
-### Guidance
-
-- Only generate if social usage is part of the business strategy
-- Social tags never affect deterministic site assembly
-
-------
-
-## 6.6 Topic (Semantic Meaning)
-
-### Intent
-
-Describes **what the image is about**, independent of business intent.
-
-### Example topic families
-
-- People & Life
-- Style & Mood
-- Environment
-- Time & Light
-- Subject-specific domains (e.g., wildlife, products)
-
-### Guidance
-
-- Topics reflect **visual reality**
-- Topics supplement services; they do not replace them
+- Reserved: `hero`, `logo`, `photographer`, `owner`
+- Services: `family`, `senior-portraits`, `commercial-branding`, `product`
+- Subjects: `newborns`, `weddings`, `wildlife`, `travel`
+- Style/mood: `candid`, `dramatic`, `black-and-white`, `golden-hour`
+- Setting: `outdoor`, `studio`, `urban`
 
 ------
 
@@ -331,15 +193,21 @@ All taxonomy candidates:
 
 This ensures historical traceability.
 
+### 7.3 Reserved tag enforcement
+
+- Policy blocks staging or publish when reserved tags are missing on assets.
+- Agents may propose reserved tags, but cannot bypass enforcement.
+
 ------
 
 ## 8. Recommended AI Output Structure
 
-When proposing a taxonomy, the AI should return:
+When proposing tags or a taxonomy, the AI should return:
 
 - A proposed tag list
-- Explanation per taxonomy dimension
+- Which tags are reserved vs descriptive
 - Assumptions made from incomplete inputs
+- Missing reserved tags or gaps to resolve
 - Optional confidence indicators
 
 The output is **advisory**, not authoritative.
@@ -350,9 +218,9 @@ The output is **advisory**, not authoritative.
 
 This approach:
 
-- Separates **use**, **business intent**, and **semantic meaning**
-- Supports service-led, portfolio-led, and hybrid photographers
-- Avoids hard-coded genres
+- Keeps the user experience simple (one taxonomy)
+- Supports service-led, portfolio-led, and hybrid businesses
+- Avoids rigid genre hierarchies
 - Preserves deterministic guarantees
 - Enables long-term architectural evolution
 

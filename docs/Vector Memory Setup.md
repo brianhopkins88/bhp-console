@@ -1,4 +1,5 @@
 # Vector Memory Setup (pgvector)
+**Normative Reference:** Vision/Architecture v0.13.
 
 This project uses pgvector for semantic memory. Do not store database credentials in docs.
 

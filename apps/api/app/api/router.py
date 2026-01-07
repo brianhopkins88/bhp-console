@@ -5,6 +5,7 @@ from app.api.v1.assets import router as assets_router
 from app.api.v1.agent_runs import router as agent_runs_router
 from app.api.v1.approvals import router as approvals_router
 from app.api.v1.auth import router as auth_router
+from app.api.v1.guardrails import router as guardrails_router
 from app.api.v1.site_intake import router as site_intake_router
 from app.api.v1.memory import router as memory_router
 from app.api.v1.tools import router as tools_router
@@ -42,4 +43,7 @@ api_router.include_router(
 )
 api_router.include_router(
     page_config_router, tags=["page-config"], dependencies=[Depends(require_api_auth)]
+)
+api_router.include_router(
+    guardrails_router, tags=["guardrails"], dependencies=[Depends(require_api_auth)]
 )

@@ -31,6 +31,11 @@ export default function AdminPage() {
             description: "Review auto-generated copy and approve.",
             href: "/admin/drafts",
           },
+          {
+            title: "Guardrails",
+            description: "Manage prompts, guardrails, and evaluation runs.",
+            href: "/admin/guardrails",
+          },
         ].map((item) => (
           <Link
             key={item.title}

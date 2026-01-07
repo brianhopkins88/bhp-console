@@ -3,6 +3,8 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
+from fastapi import HTTPException
+
 from app.api.deps import require_commit_approval
 from app.db.session import get_db
 from packages.domain.models.canonical import PageConfigVersion
@@ -14,12 +16,20 @@ from packages.domain.services.page_config import (
 )
 
 router = APIRouter()
+
+
+def _reject_canonical_write() -> None:
+    raise HTTPException(
+        status_code=409,
+        detail="Canonical writes must be executed via the tool gateway (POST /api/v1/tools/execute).",
+    )
 @router.post("/site/page-config", response_model=PageConfigVersionOut)
 def create_page_config(
     payload: PageConfigVersionCreate,
     approval_id: int | None = None,
     db: Session = Depends(get_db),
 ) -> PageConfigVersion:
+    _reject_canonical_write()
     commit_classification = payload.commit_classification or "approval_required"
     require_commit_approval(
         commit_classification,

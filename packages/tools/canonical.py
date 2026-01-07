@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import json
 import logging
+from datetime import datetime, timezone
 
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import delete, select
 
 from app.services.memory import upsert_embedding
 from packages.domain.models.canonical import (
@@ -12,7 +13,7 @@ from packages.domain.models.canonical import (
     SiteStructureVersion,
     TaxonomySnapshot,
 )
-from packages.domain.models.site_intake import TopicTaxonomy
+from packages.domain.models.site_intake import TopicTaxonomy, TopicTaxonomyChange
 from packages.domain.schemas.canonical import (
     BusinessProfileVersionCreate,
     BusinessProfileVersionOut,
@@ -21,14 +22,21 @@ from packages.domain.schemas.canonical import (
     SiteStructureVersionCreate,
     SiteStructureVersionOut,
 )
+from packages.domain.schemas.site_intake import (
+    TopicTaxonomyCreate,
+    TopicTaxonomyOut,
+    TopicTaxonomyRestoreRequest,
+)
 from packages.domain.services.page_config import (
     create_page_config_version,
     get_latest_page_config,
     list_page_config_history,
 )
+from app.services.site_intake import seed_tag_taxonomy_from_topics
 from packages.tools.registry import ToolContext, ToolRegistry, ToolSpec
 
 logger = logging.getLogger(__name__)
+MAX_TAXONOMY_VERSIONS = 3
 
 
 def _page_config_create_handler(
@@ -121,6 +129,153 @@ def _list_records(db, model, status: str | None = None, limit: int = 20, **filte
 
 def _serialize_payload(payload: object) -> str:
     return json.dumps(payload, ensure_ascii=True, sort_keys=True)
+
+
+def _trim_versions(db, model, limit: int = MAX_TAXONOMY_VERSIONS) -> None:
+    stmt = select(model.id).order_by(model.created_at.desc()).limit(limit)
+    keep_ids = [row[0] for row in db.execute(stmt).all()]
+    if not keep_ids:
+        return
+    db.execute(delete(model).where(model.id.notin_(keep_ids)))
+    db.commit()
+
+
+def _log_taxonomy_change(
+    db,
+    taxonomy: TopicTaxonomy,
+    change_type: str,
+    created_by: str,
+    source_run_id: str | None,
+) -> None:
+    change = TopicTaxonomyChange(
+        taxonomy_id=taxonomy.id,
+        status=taxonomy.status,
+        change_type=change_type,
+        taxonomy_data=taxonomy.taxonomy_data,
+        created_by=created_by,
+        source_run_id=source_run_id,
+    )
+    db.add(change)
+
+
+def _create_topic_taxonomy(
+    db,
+    payload: TopicTaxonomyCreate,
+    status_override: str | None = None,
+) -> TopicTaxonomy:
+    status = status_override or payload.status or "draft"
+    approved_at = datetime.now(timezone.utc) if status == "approved" else None
+    taxonomy: TopicTaxonomy | None = None
+    if status == "draft" and not payload.force_new:
+        taxonomy = _latest_record(db, TopicTaxonomy, status="draft")
+    if status == "approved" and not payload.force_new:
+        taxonomy = _latest_record(db, TopicTaxonomy, status="draft")
+
+    created_by = payload.created_by or "user"
+    source_run_id = payload.source_run_id
+    is_new = taxonomy is None
+    if taxonomy:
+        taxonomy.status = status
+        taxonomy.taxonomy_data = payload.taxonomy_data
+        taxonomy.approved_at = approved_at
+    else:
+        taxonomy = TopicTaxonomy(
+            status=status,
+            taxonomy_data=payload.taxonomy_data,
+            approved_at=approved_at,
+        )
+        db.add(taxonomy)
+    db.flush()
+    change_type = "approved" if status == "approved" else ("created" if is_new else "updated")
+    _log_taxonomy_change(
+        db,
+        taxonomy=taxonomy,
+        change_type=change_type,
+        created_by=created_by,
+        source_run_id=source_run_id,
+    )
+    db.commit()
+    db.refresh(taxonomy)
+    content = _serialize_payload(taxonomy.taxonomy_data)
+    try:
+        upsert_embedding(
+            db,
+            source_type="topic_taxonomy",
+            source_id=str(taxonomy.id),
+            content=content,
+            record_metadata={"status": taxonomy.status},
+        )
+    except Exception:
+        logger.exception("Failed to embed topic taxonomy %s", taxonomy.id)
+    if taxonomy.status == "approved":
+        try:
+            seed_tag_taxonomy_from_topics(db, taxonomy.taxonomy_data or {})
+        except Exception:
+            logger.exception("Failed to seed tag taxonomy from topic taxonomy %s", taxonomy.id)
+    _trim_versions(db, TopicTaxonomy)
+    return taxonomy
+
+
+def _restore_topic_taxonomy(
+    db,
+    payload: TopicTaxonomyRestoreRequest,
+) -> TopicTaxonomy:
+    change = db.get(TopicTaxonomyChange, payload.change_id)
+    if not change:
+        raise RuntimeError("Taxonomy change not found")
+    if change.taxonomy_data is None:
+        raise RuntimeError("Taxonomy change has no data to restore")
+
+    status = payload.status or "draft"
+    approved_at = datetime.now(timezone.utc) if status == "approved" else None
+    taxonomy: TopicTaxonomy | None = None
+    if status == "draft" and not payload.force_new:
+        taxonomy = _latest_record(db, TopicTaxonomy, status="draft")
+    if status == "approved" and not payload.force_new:
+        taxonomy = _latest_record(db, TopicTaxonomy, status="draft")
+
+    is_new = taxonomy is None
+    if taxonomy:
+        taxonomy.status = status
+        taxonomy.taxonomy_data = change.taxonomy_data
+        taxonomy.approved_at = approved_at
+    else:
+        taxonomy = TopicTaxonomy(
+            status=status,
+            taxonomy_data=change.taxonomy_data,
+            approved_at=approved_at,
+        )
+        db.add(taxonomy)
+
+    db.flush()
+    _log_taxonomy_change(
+        db,
+        taxonomy=taxonomy,
+        change_type="restored" if not is_new else "created",
+        created_by=payload.created_by or "user",
+        source_run_id=payload.source_run_id,
+    )
+    db.commit()
+    db.refresh(taxonomy)
+
+    content = _serialize_payload(taxonomy.taxonomy_data)
+    try:
+        upsert_embedding(
+            db,
+            source_type="topic_taxonomy",
+            source_id=str(taxonomy.id),
+            content=content,
+            record_metadata={"status": taxonomy.status},
+        )
+    except Exception:
+        logger.exception("Failed to embed topic taxonomy %s", taxonomy.id)
+    if taxonomy.status == "approved":
+        try:
+            seed_tag_taxonomy_from_topics(db, taxonomy.taxonomy_data or {})
+        except Exception:
+            logger.exception("Failed to seed tag taxonomy from topic taxonomy %s", taxonomy.id)
+    _trim_versions(db, TopicTaxonomy)
+    return taxonomy
 
 
 def _resolve_latest_taxonomy(db) -> TopicTaxonomy | None:
@@ -415,6 +570,84 @@ def _site_structure_history_handler(
     )
 
 
+class TopicTaxonomyLatestInput(BaseModel):
+    status: str | None = None
+
+
+class TopicTaxonomyLatestOutput(BaseModel):
+    topic_taxonomy: TopicTaxonomyOut | None
+
+
+def _topic_taxonomy_latest_handler(
+    payload: TopicTaxonomyLatestInput,
+    context: ToolContext,
+) -> TopicTaxonomyLatestOutput:
+    if context.db is None:
+        raise RuntimeError("Database session missing")
+    taxonomy = _latest_record(context.db, TopicTaxonomy, status=payload.status)
+    if taxonomy is None:
+        return TopicTaxonomyLatestOutput(topic_taxonomy=None)
+    return TopicTaxonomyLatestOutput(
+        topic_taxonomy=TopicTaxonomyOut.model_validate(taxonomy)
+    )
+
+
+class TopicTaxonomyHistoryInput(BaseModel):
+    status: str | None = None
+    limit: int = 20
+
+
+class TopicTaxonomyHistoryOutput(BaseModel):
+    items: list[TopicTaxonomyOut]
+
+
+def _topic_taxonomy_history_handler(
+    payload: TopicTaxonomyHistoryInput,
+    context: ToolContext,
+) -> TopicTaxonomyHistoryOutput:
+    if context.db is None:
+        raise RuntimeError("Database session missing")
+    items = _list_records(
+        context.db,
+        TopicTaxonomy,
+        status=payload.status,
+        limit=payload.limit,
+    )
+    return TopicTaxonomyHistoryOutput(
+        items=[TopicTaxonomyOut.model_validate(item) for item in items]
+    )
+
+
+def _topic_taxonomy_create_handler(
+    payload: TopicTaxonomyCreate,
+    context: ToolContext,
+) -> TopicTaxonomyOut:
+    if context.db is None:
+        raise RuntimeError("Database session missing")
+    taxonomy = _create_topic_taxonomy(context.db, payload)
+    return TopicTaxonomyOut.model_validate(taxonomy)
+
+
+def _topic_taxonomy_approve_handler(
+    payload: TopicTaxonomyCreate,
+    context: ToolContext,
+) -> TopicTaxonomyOut:
+    if context.db is None:
+        raise RuntimeError("Database session missing")
+    taxonomy = _create_topic_taxonomy(context.db, payload, status_override="approved")
+    return TopicTaxonomyOut.model_validate(taxonomy)
+
+
+def _topic_taxonomy_restore_handler(
+    payload: TopicTaxonomyRestoreRequest,
+    context: ToolContext,
+) -> TopicTaxonomyOut:
+    if context.db is None:
+        raise RuntimeError("Database session missing")
+    taxonomy = _restore_topic_taxonomy(context.db, payload)
+    return TopicTaxonomyOut.model_validate(taxonomy)
+
+
 def register_canonical_tools(registry: ToolRegistry) -> None:
     registry.register(
         ToolSpec(
@@ -513,5 +746,50 @@ def register_canonical_tools(registry: ToolRegistry) -> None:
             output_model=SiteStructureHistoryOutput,
             handler=_site_structure_history_handler,
             description="List recent site structure versions.",
+        )
+    )
+    registry.register(
+        ToolSpec(
+            name="canonical.topic_taxonomy.latest",
+            input_model=TopicTaxonomyLatestInput,
+            output_model=TopicTaxonomyLatestOutput,
+            handler=_topic_taxonomy_latest_handler,
+            description="Fetch the latest topic taxonomy.",
+        )
+    )
+    registry.register(
+        ToolSpec(
+            name="canonical.topic_taxonomy.create",
+            input_model=TopicTaxonomyCreate,
+            output_model=TopicTaxonomyOut,
+            handler=_topic_taxonomy_create_handler,
+            description="Create a topic taxonomy entry.",
+        )
+    )
+    registry.register(
+        ToolSpec(
+            name="canonical.topic_taxonomy.approve",
+            input_model=TopicTaxonomyCreate,
+            output_model=TopicTaxonomyOut,
+            handler=_topic_taxonomy_approve_handler,
+            description="Create an approved topic taxonomy entry.",
+        )
+    )
+    registry.register(
+        ToolSpec(
+            name="canonical.topic_taxonomy.restore",
+            input_model=TopicTaxonomyRestoreRequest,
+            output_model=TopicTaxonomyOut,
+            handler=_topic_taxonomy_restore_handler,
+            description="Restore a topic taxonomy version from history.",
+        )
+    )
+    registry.register(
+        ToolSpec(
+            name="canonical.topic_taxonomy.history",
+            input_model=TopicTaxonomyHistoryInput,
+            output_model=TopicTaxonomyHistoryOutput,
+            handler=_topic_taxonomy_history_handler,
+            description="List recent topic taxonomy versions.",
         )
     )

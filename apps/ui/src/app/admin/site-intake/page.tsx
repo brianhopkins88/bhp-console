@@ -103,15 +103,6 @@ type PageConfigVersion = {
   created_at: string;
 };
 
-type ApprovalRecord = {
-  id: number;
-  action: string;
-  status: string;
-  requester: string;
-  created_at: string;
-  decided_at: string | null;
-};
-
 type SiteIntakeState = {
   business_profile: BusinessProfileRecord | null;
   site_structure: SiteStructureRecord | null;
@@ -175,6 +166,7 @@ export default function SiteIntakePage() {
   const [guardrailMessage, setGuardrailMessage] = useState<string | null>(null);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [toolRunId, setToolRunId] = useState<string | null>(null);
 
   const [services, setServices] = useState("");
   const [subjects, setSubjects] = useState("");
@@ -531,26 +523,29 @@ export default function SiteIntakePage() {
     }
   };
 
-  const requestApproval = async (
-    action: string,
-    proposal: Record<string, unknown>
-  ): Promise<number> => {
-    const createResponse = await apiFetch(`${apiBaseUrl}/api/v1/approvals`, {
+  const ensureToolRunId = async (): Promise<string> => {
+    if (toolRunId) return toolRunId;
+    const response = await apiFetch(`${apiBaseUrl}/api/v1/agent-runs`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        action,
-        proposal,
-        requester: "admin-ui",
+        goal: "admin-site-intake",
+        plan: null,
+        run_metadata: { source: "admin-ui" },
       }),
     });
-    if (!createResponse.ok) {
-      const payload = await createResponse.json().catch(() => ({}));
-      throw new Error(payload.detail ?? `HTTP ${createResponse.status}`);
+    if (!response.ok) {
+      const payload = await response.json().catch(() => ({}));
+      throw new Error(payload.detail ?? `HTTP ${response.status}`);
     }
-    const approval = (await createResponse.json()) as ApprovalRecord;
-    const decisionResponse = await apiFetch(
-      `${apiBaseUrl}/api/v1/approvals/${approval.id}/decision`,
+    const run = (await response.json()) as { id: string };
+    setToolRunId(run.id);
+    return run.id;
+  };
+
+  const approveTool = async (approvalId: number) => {
+    const response = await apiFetch(
+      `${apiBaseUrl}/api/v1/approvals/${approvalId}/decision`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -560,11 +555,66 @@ export default function SiteIntakePage() {
         }),
       }
     );
-    if (!decisionResponse.ok) {
-      const payload = await decisionResponse.json().catch(() => ({}));
-      throw new Error(payload.detail ?? `HTTP ${decisionResponse.status}`);
+    if (!response.ok) {
+      const payload = await response.json().catch(() => ({}));
+      throw new Error(payload.detail ?? `HTTP ${response.status}`);
     }
-    return approval.id;
+  };
+
+  const executeTool = async (
+    toolName: string,
+    input: Record<string, unknown>
+  ): Promise<Record<string, unknown>> => {
+    const runId = await ensureToolRunId();
+    const response = await apiFetch(`${apiBaseUrl}/api/v1/tools/execute`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        run_id: runId,
+        tool_name: toolName,
+        input,
+        requester: "admin-ui",
+      }),
+    });
+    if (!response.ok) {
+      const payload = await response.json().catch(() => ({}));
+      throw new Error(payload.detail ?? `HTTP ${response.status}`);
+    }
+    const payload = (await response.json()) as {
+      status: string;
+      output: Record<string, unknown> | null;
+      approval_id?: number;
+    };
+    if (payload.status === "requires_approval" && payload.approval_id) {
+      await approveTool(payload.approval_id);
+      const retry = await apiFetch(`${apiBaseUrl}/api/v1/tools/execute`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          run_id: runId,
+          tool_name: toolName,
+          input,
+          requester: "admin-ui",
+          approval_id: payload.approval_id,
+        }),
+      });
+      if (!retry.ok) {
+        const detail = await retry.json().catch(() => ({}));
+        throw new Error(detail.detail ?? `HTTP ${retry.status}`);
+      }
+      const retryPayload = (await retry.json()) as {
+        status: string;
+        output: Record<string, unknown> | null;
+      };
+      if (!retryPayload.output) {
+        throw new Error("Tool returned no output.");
+      }
+      return retryPayload.output;
+    }
+    if (!payload.output) {
+      throw new Error("Tool returned no output.");
+    }
+    return payload.output;
   };
 
   const saveBusinessProfile = async ({
@@ -589,27 +639,14 @@ export default function SiteIntakePage() {
         force_new: forceNew ?? false,
         commit_classification: commitClassification,
       };
-      let approvalId: number | null = null;
-      if (commitClassification !== "safe_auto_commit") {
-        approvalId = await requestApproval(
-          "api.site.business_profile.create",
-          proposal
-        );
-      }
-      const url = new URL(`${apiBaseUrl}/api/v1/site/business-profile`);
-      if (approvalId) {
-        url.searchParams.set("approval_id", `${approvalId}`);
-      }
-      const response = await apiFetch(url.toString(), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(proposal),
-      });
-      if (!response.ok) {
-        const payload = await response.json().catch(() => ({}));
-        throw new Error(payload.detail ?? `HTTP ${response.status}`);
-      }
-      const data = (await response.json()) as BusinessProfileRecord;
+      const toolName =
+        status === "approved"
+          ? "canonical.business_profile.approve"
+          : "canonical.business_profile.create";
+      const data = (await executeTool(
+        toolName,
+        proposal
+      )) as unknown as BusinessProfileRecord;
       lastSavedProfileRef.current = JSON.stringify(profile);
       setIntakeState((prev) =>
         prev
@@ -646,20 +683,18 @@ export default function SiteIntakePage() {
     setSavingTaxonomy(true);
     setActionError(null);
     try {
-      const response = await apiFetch(`${apiBaseUrl}/api/v1/site/taxonomy`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          status,
-          taxonomy_data: taxonomy,
-          force_new: forceNew ?? false,
-        }),
-      });
-      if (!response.ok) {
-        const payload = await response.json().catch(() => ({}));
-        throw new Error(payload.detail ?? `HTTP ${response.status}`);
-      }
-      const data = (await response.json()) as TopicTaxonomyRecord;
+      const commitClassification =
+        status === "approved" ? "approval_required" : "safe_auto_commit";
+      const toolName =
+        status === "approved"
+          ? "canonical.topic_taxonomy.approve"
+          : "canonical.topic_taxonomy.create";
+      const data = (await executeTool(toolName, {
+        status,
+        taxonomy_data: taxonomy,
+        force_new: forceNew ?? false,
+        commit_classification: commitClassification,
+      })) as unknown as TopicTaxonomyRecord;
       lastSavedTaxonomyRef.current = JSON.stringify(taxonomy);
       setIntakeState((prev) =>
         prev
@@ -704,27 +739,14 @@ export default function SiteIntakePage() {
         force_new: forceNew ?? false,
         commit_classification: commitClassification,
       };
-      let approvalId: number | null = null;
-      if (commitClassification !== "safe_auto_commit") {
-        approvalId = await requestApproval(
-          "api.site.structure.create",
-          proposal
-        );
-      }
-      const url = new URL(`${apiBaseUrl}/api/v1/site/structure`);
-      if (approvalId) {
-        url.searchParams.set("approval_id", `${approvalId}`);
-      }
-      const response = await apiFetch(url.toString(), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(proposal),
-      });
-      if (!response.ok) {
-        const payload = await response.json().catch(() => ({}));
-        throw new Error(payload.detail ?? `HTTP ${response.status}`);
-      }
-      const data = (await response.json()) as SiteStructureRecord;
+      const toolName =
+        status === "approved"
+          ? "canonical.site_structure.approve"
+          : "canonical.site_structure.create";
+      const data = (await executeTool(
+        toolName,
+        proposal
+      )) as unknown as SiteStructureRecord;
       lastSavedStructureRef.current = JSON.stringify(structure);
       setIntakeState((prev) =>
         prev
@@ -953,20 +975,14 @@ export default function SiteIntakePage() {
     setTaxonomyRestoreId(change.id);
     setActionError(null);
     try {
-      const response = await apiFetch(`${apiBaseUrl}/api/v1/site/taxonomy/restore`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          change_id: change.id,
-          status,
-          force_new: true,
-        }),
-      });
-      if (!response.ok) {
-        const payload = await response.json().catch(() => ({}));
-        throw new Error(payload.detail ?? `HTTP ${response.status}`);
-      }
-      const data = (await response.json()) as TopicTaxonomyRecord;
+      const commitClassification =
+        status === "approved" ? "approval_required" : "safe_auto_commit";
+      const data = (await executeTool("canonical.topic_taxonomy.restore", {
+        change_id: change.id,
+        status,
+        force_new: true,
+        commit_classification: commitClassification,
+      })) as unknown as TopicTaxonomyRecord;
       const restored = change.taxonomy_data;
       setTaxonomyDraft(restored);
       lastSavedTaxonomyRef.current = JSON.stringify(restored);
@@ -1058,26 +1074,7 @@ export default function SiteIntakePage() {
         status: pageConfigStatus,
         commit_classification: commitClassification,
       };
-      let approvalId: number | null = null;
-      if (commitClassification !== "safe_auto_commit") {
-        approvalId = await requestApproval(
-          "api.site.page_config.create",
-          proposal
-        );
-      }
-      const url = new URL(`${apiBaseUrl}/api/v1/site/page-config`);
-      if (approvalId) {
-        url.searchParams.set("approval_id", `${approvalId}`);
-      }
-      const response = await apiFetch(url.toString(), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(proposal),
-      });
-      if (!response.ok) {
-        const payload = await response.json().catch(() => ({}));
-        throw new Error(payload.detail ?? `HTTP ${response.status}`);
-      }
+      await executeTool("canonical.page_config.create", proposal);
       setActionMessage("Page config saved.");
       await loadPageConfigHistory(pageConfigPageId);
     } catch (err) {

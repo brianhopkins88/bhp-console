@@ -1,4 +1,9 @@
 # AI-Guided Photography Site Taxonomy
+**Normative Reference:** Vision/Architecture v0.13.
+
+> ARCHIVED: Superseded by `docs/AI Tagging and Taxonomy.md` and the single-taxonomy model in
+> `docs/BHP Management Console Vision.md` (v0.13). This document reflects the older multi-dimension
+> taxonomy pattern (Role/Service/Site/Topic) and is retained for historical context only.
 
 **Adaptive Reference Framework (All Tags Are Examples)**
 

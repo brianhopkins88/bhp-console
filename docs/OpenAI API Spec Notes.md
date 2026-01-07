@@ -1,4 +1,5 @@
 # OpenAI API Spec Notes (Pinned)
+**Normative Reference:** Vision/Architecture v0.13.
 
 This document records the OpenAI API specifics we rely on for stable, bug-minimized integrations.
 It is a living checklist of API behaviors, pinning rules, and lessons learned.
@@ -89,7 +90,7 @@ It is a living checklist of API behaviors, pinning rules, and lessons learned.
 
 1. Update `apps/api/requirements.txt` and pin the new SDK version.
 2. Update defaults in `apps/api/app/core/settings.py` if model or schema changes.
-3. Update this doc and `docs/AI Tagging.md` with new version details.
+3. Update this doc and `docs/AI Tagging and Taxonomy.md` with new version details.
 4. Run the smoke tests and a small real tagging job.
 5. Record any new behaviors in the lessons learned section.
 
